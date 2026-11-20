@@ -1,13 +1,17 @@
+// Hardhat config for Quai Orchard (Cyprus-1, chain 15000).
+// Compiler settings follow docs.qu.ai "Deploy with Solidity": 0.8.20, evmVersion "london"
+// (0.8.20 defaults to Shanghai, whose PUSH0 opcode the Quai EVM may not support), metadata
+// bytecodeHash "ipfs" (quais ContractFactory requires the metadata CID, read locally from bytecode).
 require("@nomicfoundation/hardhat-ethers");
 require("@nomicfoundation/hardhat-chai-matchers");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") }); // shared project .env (never committed)
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") }); // project .env, never committed
 const { subtask } = require("hardhat/config");
 const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require("hardhat/builtin-tasks/task-names");
 
-const SOLC_VERSION = "0.8.24";
+const SOLC_VERSION = "0.8.20";
 
-// Use the pinned npm `solc` (solcjs) instead of downloading a compiler at build time.
+// Use the pinned npm `solc` (solcjs) so compiling never downloads a compiler.
 subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
   if (args.solcVersion === SOLC_VERSION) {
     const solc = require("solc");
@@ -17,15 +21,26 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
   return runSuper();
 });
 
-const { AMOY_RPC_URL, ANCHOR_PRIVATE_KEY } = process.env;
+const { RPC_URL, CYPRUS1_PK, CHAIN_ID } = process.env;
 
 module.exports = {
-  solidity: { version: SOLC_VERSION, settings: { optimizer: { enabled: true, runs: 200 } } },
+  solidity: {
+    version: SOLC_VERSION,
+    settings: {
+      optimizer: { enabled: true, runs: 200 },
+      evmVersion: "london",
+      metadata: { bytecodeHash: "ipfs" },
+    },
+  },
+  defaultNetwork: "hardhat",
   networks: {
     hardhat: {},
-    localhost: { url: "http://127.0.0.1:8545" },
-    ...(AMOY_RPC_URL && ANCHOR_PRIVATE_KEY
-      ? { amoy: { url: AMOY_RPC_URL, chainId: 80002, accounts: [ANCHOR_PRIVATE_KEY] } }
-      : {}),
+    // Used only for configuration (url/chainId). Quai transactions are built and signed with the
+    // quais SDK (scripts/deploy.js, backend/blockchain/quai-service), not hardhat-ethers.
+    cyprus1: {
+      url: RPC_URL || "https://orchard.rpc.quai.network/cyprus1",
+      chainId: Number(CHAIN_ID || 15000),
+      accounts: CYPRUS1_PK ? [CYPRUS1_PK] : [],
+    },
   },
 };

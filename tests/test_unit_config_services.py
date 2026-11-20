@@ -100,14 +100,17 @@ def test_merkle_batches_list_route(client, jwt_headers, ingest):
     assert items[0]["mode"] == "SIMULATED"
 
 
-def test_quai_keys_never_reach_web3_and_badge_stays_truthful(tmp_path):
-    """Until the quai-service exists, full Quai keys still give a simulated anchorer and a SIMULATED badge."""
+def test_quai_keys_route_anchoring_through_quai_service(tmp_path):
+    """Full Quai keys -> Python uses the quai-service client (REAL badge), never a Python signer."""
     from fastapi.testclient import TestClient
     from backend.app.factory import create_app
+    from backend.blockchain.anchor import QuaiServiceAnchorer
     from tests.conftest import make_settings
     s = make_settings(tmp_path, rpc_url="https://rpc.example", cyprus1_pk="0x" + "1" * 64,
                       contract_address="0x" + "2" * 40)
     app = create_app(s, run_monitor=False)
-    assert app.state.ctx.anchorer.mode == "SIMULATED"
+    assert isinstance(app.state.ctx.anchorer, QuaiServiceAnchorer)
     with TestClient(app) as c:
-        assert c.get("/api/health").json()["integrations"]["blockchain"] == "SIMULATED"
+        assert c.get("/api/health").json()["integrations"]["blockchain"] == "REAL"
+    s2 = make_settings(tmp_path, rpc_url="https://rpc.example", cyprus1_pk="", contract_address="0x" + "2" * 40)
+    assert create_app(s2, run_monitor=False).state.ctx.anchorer.mode == "SIMULATED"  # partial keys -> simulator

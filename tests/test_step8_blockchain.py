@@ -1,6 +1,11 @@
-"""Step 8: anchoring (simulator; and REAL web3 path against a local Hardhat node when available)."""
+"""Step 8: anchoring on Quai Orchard (simulator, and the quai-service client / real Node service)."""
 import os
 import re
+import shutil
+import socket
+import subprocess
+import time
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -107,39 +112,6 @@ def test_verifier_service_runs_separately(tmp_path, capsys):
     assert report["batches"] == {1: "MATCH"}
 
 
-def test_web3_anchorer_never_exposes_key():
-    from backend.blockchain.anchor import Web3Anchorer
-    key = "0x" + "11" * 32
-    a = Web3Anchorer("http://127.0.0.1:1", key, "0x" + "22" * 20, chain_id=80002)
-    assert key not in repr(a) and key[2:] not in repr(a)
-    from backend.blockchain.anchor import AnchorError
-    with pytest.raises(AnchorError) as e:
-        a.anchor("aa" * 32, 1)
-    assert key[2:] not in str(e.value)
-
-
-HARDHAT_RPC = os.getenv("HARDHAT_RPC_URL")
-
-
-@pytest.mark.skipif(not HARDHAT_RPC, reason="HARDHAT_RPC_URL not set (local Hardhat node with deployed LogAnchor)")
-def test_real_web3_mode_against_local_hardhat(tmp_path):
-    """Exercises the REAL web3.py code path end-to-end on a local chain (not Amoy)."""
-    from fastapi.testclient import TestClient
-    from tests.conftest import TEST_API_KEY, sample_event
-    s = make_settings(tmp_path, amoy_rpc_url=HARDHAT_RPC, anchor_private_key=os.environ["HARDHAT_TEST_KEY"],
-                      contract_address=os.environ["HARDHAT_CONTRACT"], chain_id=31337)
-    with TestClient(create_app(s, run_monitor=False)) as c:
-        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
-        for i in range(4):
-            c.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
-        b = c.post("/api/merkle/build", headers=h).json()
-        a = c.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=h).json()
-        assert a["mode"] == "REAL" and a["tx_hash"].startswith("0x") and a["block_number"] > 0
-        onchain = c.app.state.ctx.anchorer.get_anchor(int(a["onchain_batch_id"]))
-        assert onchain["root"] == b["root"]
-        assert c.post("/api/proof/verify", json={"batch_id": b["batch_id"]}, headers=h).json()["result"] == "MATCH"
-
-
 def test_two_databases_can_share_one_contract_without_key_collision(tmp_path):
     """Regression (found live): a fresh DB restarts batch_id at 1; on-chain keys must not collide."""
     from fastapi.testclient import TestClient
@@ -171,3 +143,117 @@ def test_editing_stored_onchain_key_is_mismatch_not_downgrade(app, client, jwt_h
         c.execute(text("UPDATE blockchain_anchors SET onchain_batch_id='12345' WHERE batch_id=:b"), {"b": b["batch_id"]})
     r = client.post("/api/proof/verify", json={"batch_id": b["batch_id"]}, headers=jwt_headers).json()
     assert r["result"] == "MISMATCH" and "none exists on-chain" in r["problems"][0]
+
+
+# ----------------------------------------------------------------------------- quai-service client (REAL path)
+import httpx  # noqa: E402
+
+from backend.blockchain.anchor import AlreadyAnchored, AnchorError, QuaiServiceAnchorer  # noqa: E402
+
+
+def _emulated_service(state):
+    """httpx transport that behaves like backend/blockchain/quai-service (contract per PROJECT_STATE.md)."""
+    def handler(req: httpx.Request):
+        if req.url.path == "/status":
+            return httpx.Response(200, json={"mode": "REAL", "chain_id": 15000, "rpc_chain_id": 15000, "connected": True,
+                                             "wallet_address": "0x0027" + "a" * 36, "latest_block": 8305618,
+                                             "broadcast_allowed": state.get("allow", True)})
+        if req.url.path == "/anchor" and req.method == "POST":
+            body = __import__("json").loads(req.content)
+            if not state.get("allow", True):
+                return httpx.Response(403, json={"detail": "broadcasting is disabled"})
+            if body["batch_id"] in state["anchored"]:
+                return httpx.Response(409, json={"detail": "already anchored"})
+            state["anchored"][body["batch_id"]] = body["root"]
+            return httpx.Response(200, json={"tx_hash": "0x" + "11" * 32, "block_number": 8305620,
+                                             "block_timestamp": "2026-11-20T18:00:00Z",
+                                             "explorer_url": "https://orchard.quaiscan.io/tx/0x" + "11" * 32})
+        parts = req.url.path.strip("/").split("/")
+        if parts[0] == "anchor" and len(parts) >= 2:
+            bid = parts[1]
+            if bid not in state["anchored"]:
+                return httpx.Response(404, json={"detail": "not anchored"})
+            if len(parts) == 3:
+                return httpx.Response(200, json={"root": state["anchored"][bid], "tx_hash": "0x" + "11" * 32,
+                                                 "block_number": 8305620, "block_timestamp": "2026-11-20T18:00:00Z"})
+            return httpx.Response(200, json={"root": state["anchored"][bid], "block_timestamp": "2026-11-20T18:00:00Z"})
+        return httpx.Response(404, json={"detail": "not found"})
+    return httpx.MockTransport(handler)
+
+
+def test_quai_service_client_paths():
+    state = {"anchored": {}}
+    a = QuaiServiceAnchorer("0x00aa" + "0" * 36, transport=_emulated_service(state))
+    assert a.mode == "REAL" and a.connected() and a.latest_block() == 8305618 and a.address.startswith("0x0027")
+    r = a.anchor("ab" * 32, 7)
+    assert r["tx_hash"].startswith("0x") and r["explorer_url"].startswith("https://orchard.quaiscan.io/tx/")
+    assert a.get_anchor(7)["root"] == "ab" * 32 and a.get_anchor(8) is None
+    assert a.find_anchor_tx(7)["tx_hash"] == r["tx_hash"]
+    with pytest.raises(AlreadyAnchored):
+        a.anchor("ab" * 32, 7)
+    state["allow"] = False
+    with pytest.raises(AnchorError, match="HTTP 403"):
+        a.anchor("cd" * 32, 9)
+
+
+def test_quai_service_unreachable_is_503_from_api(tmp_path):
+    """REAL keys set but quai-service down: anchoring returns 503, nothing is faked."""
+    from fastapi.testclient import TestClient
+    from tests.conftest import TEST_API_KEY, sample_event
+    s = make_settings(tmp_path, rpc_url="https://orchard.rpc.quai.network/cyprus1", cyprus1_pk="0x" + "1" * 64,
+                      contract_address="0x00aa" + "0" * 36)
+    app = create_app(s, run_monitor=False)
+    app.state.ctx.anchorer = QuaiServiceAnchorer(s.contract_address, base_url="http://127.0.0.1:9")  # nothing listens
+    with TestClient(app) as c:
+        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
+        assert c.get("/api/health").json()["integrations"]["blockchain"] == "REAL"
+        for i in range(3):
+            c.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
+        b = c.post("/api/merkle/build", headers=h).json()
+        r = c.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=h)
+        assert r.status_code == 503 and "unreachable" in r.json()["detail"]
+        assert c.get("/api/blockchain/status", headers=h).json()["connected"] is False
+
+
+def test_python_never_holds_the_quai_private_key(tmp_path):
+    s = make_settings(tmp_path, rpc_url="https://x", cyprus1_pk="0x" + "ab" * 32, contract_address="0x00aa" + "0" * 36)
+    a = create_app(s, run_monitor=False).state.ctx.anchorer
+    assert isinstance(a, QuaiServiceAnchorer)
+    assert "ab" * 32 not in repr(a) and "ab" * 32 not in str(vars(a))
+
+
+SERVICE_DIR = Path(__file__).resolve().parents[1] / "backend" / "blockchain" / "quai-service"
+
+
+def _free_port():
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        return so.getsockname()[1]
+
+
+@pytest.mark.skipif(not shutil.which("node") or not (SERVICE_DIR / "node_modules").exists(),
+                    reason="node or quai-service node_modules missing")
+def test_real_node_quai_service_simulated_mode_end_to_end(tmp_path):
+    """Starts the real Node quai-service without keys and drives it from Python."""
+    port = _free_port()
+    env = {k: v for k, v in os.environ.items() if k not in ("RPC_URL", "CYPRUS1_PK", "CONTRACT_ADDRESS")}
+    env["QUAI_SERVICE_PORT"] = str(port)
+    # run from a temp cwd so the project .env (if any) is not what decides the mode: the service reads ../../../.env,
+    # so blank the keys explicitly instead
+    env.update({"RPC_URL": "", "CYPRUS1_PK": "", "CONTRACT_ADDRESS": ""})
+    proc = subprocess.Popen(["node", "server.js"], cwd=SERVICE_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        a = QuaiServiceAnchorer("0x00aa" + "0" * 36, base_url=f"http://127.0.0.1:{port}")
+        for _ in range(50):
+            if a.status():
+                break
+            time.sleep(0.1)
+        st = a.status()
+        assert st["mode"] == "SIMULATED" and st["chain_id"] == 15000 and st["broadcast_allowed"] is False
+        assert a.connected() is False
+        with pytest.raises(AnchorError, match="HTTP 403"):  # broadcast gate comes first
+            a.anchor("ab" * 32, 1)
+    finally:
+        proc.terminate()
+        out = proc.communicate(timeout=10)[0]
+    assert "mode=SIMULATED" in out and "listening on http://127.0.0.1:" in out

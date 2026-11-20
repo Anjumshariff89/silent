@@ -12,8 +12,8 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Quai rebuild — Step 7 (Merkle tree) complete |
-| Next step | Step 8 — Blockchain on Quai Orchard (new build; no broadcast without "approve") |
+| Current step | Quai rebuild — Step 8 simulator mode complete; REAL mode waits for operator keys + "approve" |
+| Next step | Operator: set RPC_URL/CYPRUS1_PK in .env, review the dry-run plan, reply "approve" (or continue with Step 9) |
 | Python | 3.12 (venv at `.venv`) · Node.js LTS (quai-service, Hardhat, frontend) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
 | Build host | Linux cloud container (target platform: Windows 11 / PowerShell) |
@@ -28,7 +28,7 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 - [x] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash)
 - [x] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
 - [x] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
-- [ ] **Step 8** Blockchain on Quai Orchard (Solidity 0.8.20 `anchorRoot`, Hardhat `cyprus1`, Node.js quais service `/anchor` `/status`, simulator; **no broadcast until operator replies "approve"**)
+- [~] **Step 8** Blockchain on Quai Orchard — simulator PASS; REAL deploy/anchor not yet run — (Solidity 0.8.20 `anchorRoot`, Hardhat `cyprus1`, Node.js quais service `/anchor` `/status`, simulator; **no broadcast until operator replies "approve"**)
 - [ ] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer, Orchard QuaiScan links)
 - [ ] **Step 10** Frontend (SOC dashboard, "Quai Orchard (REAL)" / "SIMULATED" badges)
 - [ ] **Step 11** End-to-end tests (6 scenarios)
@@ -469,24 +469,35 @@ Connection without a valid token is closed with code 1008 (policy violation).
 
 ---
 
-## Internal API: quai-service (Node.js, local port `8787`, loopback only)
+## Internal API: quai-service (Node.js, `127.0.0.1:8787`, loopback only)
 
-The FastAPI backend is the only client. No auth header is needed because it binds to `127.0.0.1` only.
+Code: `backend/blockchain/quai-service/` (`server.js`, `app.js`). The FastAPI backend is the only client (no auth header;
+it binds to `127.0.0.1`). Python calls it through `QuaiServiceAnchorer`; Python never reads `CYPRUS1_PK`.
+Start read-only: `node server.js`. Broadcasting requires `node server.js --allow-broadcast` (otherwise `/anchor` → 403).
 
 ### `GET /status`
 ```json
-{ "mode": "REAL", "network": "Quai Orchard Cyprus-1", "chain_id": 15000, "rpc_chain_id": 15000,
-  "connected": true, "contract_address": "0x00...", "wallet_address": "0x00...", "latest_block": 123456 }
+{ "mode": "REAL", "network": "Quai Orchard Cyprus-1", "chain_id": 15000, "broadcast_allowed": false,
+  "contract_address": "0x00...", "connected": true, "rpc_chain_id": 15000, "wallet_address": "0x00...",
+  "wallet_zone": "0x00", "contract_has_code": true, "latest_block": 8305618 }
 ```
-`mode` is `SIMULATED` when keys are missing. The private key is never returned.
+`mode` is `SIMULATED` (and `connected` false) when `RPC_URL`, `CYPRUS1_PK` or `CONTRACT_ADDRESS` is missing.
+`latest_block` is always the Cyprus-1 height. The private key is never returned.
 
 ### `POST /anchor`
 Request: `{ "root": "<64 hex>", "batch_id": "<uint256 as decimal string>" }`
-Response 200: `{ "tx_hash": "0x...", "block_number": 123457, "block_timestamp": "2026-...Z", "explorer_url": "https://orchard.quaiscan.io/tx/0x..." }`
-Errors: `409` already anchored, `400` bad input, `503` RPC unreachable / chain ID mismatch, `403` broadcasting not approved.
+Response 200: `{ "tx_hash": "0x...", "block_number": 8305620, "block_timestamp": "2026-...Z", "explorer_url": "https://orchard.quaiscan.io/tx/0x..." }`
+Order of checks: input (`400`) → broadcast allowed (`403`, no RPC call made) → RPC reachable and chain = `CHAIN_ID`,
+wallet in Cyprus-1, contract has code (`503`) → not already anchored (`409`) → send. Body > 4 KB → `413`.
 
-### `GET /anchor/{batch_id}`
-Response 200: `{ "batch_id": "...", "root": "<64 hex>", "timestamp": 1790000000 }` or `404` when not anchored.
+### `GET /anchor/{batch_id}` · `GET /anchor/{batch_id}/tx`
+`{ "batch_id", "root", "timestamp", "block_timestamp", "submitter" }` / `{ "batch_id", "root", "tx_hash", "block_number",
+"block_timestamp", "explorer_url" }` (from the `RootAnchored` event), or `404` when not anchored.
+
+## Quai compatibility
+
+See `documentation/QUAI_COMPATIBILITY.md` (Solidity 0.8.20 + evmVersion london / no PUSH0, Cyprus-1 zone addresses,
+quais-only signing, offline metadata CID instead of IPFS, RPC pathing, Prime vs Cyprus-1 block height).
 
 ## Additional endpoints (beyond the original contract)
 
@@ -522,3 +533,4 @@ Response 200: `{ "batch_id": "...", "root": "<64 hex>", "timestamp": 1790000000 
 | 2026-11-20 | Q5 | Hash chain re-verified (NIST vectors, 5-log chain via API, genesis 0*64, independent hashlib recompute, /api/chain all valid). Hashing code unchanged since 077e982. |
 | 2026-11-20 | Q6 | Tamper detection re-verified live: clean PASS; modify@4, delete@6 (gap 5->7), reorder@8/9 detected on sandbox copies; 5 incidents + console alerts; original fingerprint unchanged. Code unchanged since 14deca7. |
 | 2026-11-20 | Q7 | Merkle tree re-verified (hand-computed 4- and 3-leaf roots, odd counts 1/3/5, one-byte leaf/sibling change fails, endpoints + merkle_batches storage). Code unchanged since f3ff95e. |
+| 2026-11-20 | Q8 | Quai Step 8 (simulator): LogAnchor 0.8.20/london (0 PUSH0), Hardhat cyprus1 config, quais deploy script (dry run default, --broadcast flag, zone + chain guards, offline metadata CID), Node quai-service (/status, /anchor, /anchor/:id[/tx], broadcast gate), Python QuaiServiceAnchorer, web3.py removed (lock 66 -> 36 packages), Orchard QuaiScan links. Live read-only checks against the real Orchard RPC. Network allowlist environment `silent` created (docs.qu.ai, orchard.rpc.quai.network, orchard.quaiscan.io). |

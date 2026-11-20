@@ -1,0 +1,27 @@
+# Quai Orchard compatibility report (Step 8)
+
+Sources were read on 2026-11-20 from `https://docs.qu.ai/llms.txt` and the linked `.md` pages, plus the
+`quais@1.0.0-alpha.58` source code from npm. Each finding was checked by running something, not taken on trust.
+
+| # | Finding | Source | What this project does | Verified by |
+|---|---|---|---|---|
+| 1 | Orchard Cyprus-1 RPC is `https://orchard.rpc.quai.network/cyprus1`, chain ID **15000**. Explorer `https://orchard.quaiscan.io`, faucet `https://orchard.faucet.quai.network`. | llms.txt lines 5-9; `build/networks` | `CHAIN_ID=15000` default; the quai-service and deploy script refuse to sign if the RPC reports another chain. | `quai_chainId` → `0x3a98` (= 15000); live test `RPC chain 15000` |
+| 2 | **Solidity version: the docs contradict themselves.** llms.txt and the Hardhat guide say "up to 0.8.20"; the Solidity page says "up to 0.8.19 … newer may result in errors". | llms.txt line 20; `build/smart-contracts/solidity`; `guides/development/solidity` | Use **0.8.20** (your requirement), exactly as the official Hardhat guide does, with `evmVersion: "london"`. | Compiles: `Compiled 1 Solidity file successfully (evm target: london)` |
+| 3 | 0.8.20 targets Shanghai by default, which emits the **PUSH0** opcode. The official guide pins `evmVersion: 'london'`. | `guides/development/solidity` (hardhat.config.js sample) | `evmVersion: "london"`; the deploy script refuses bytecode containing PUSH0; Hardhat test asserts 0 PUSH0. | Same contract: shanghai → **18 PUSH0**, london → **0** |
+| 4 | **Zone-specific addresses.** The first byte encodes region and zone (Cyprus-1 = `0x00`, Quai ledger). A random private key lands in Cyprus-1 only ~1/512 of the time. | `sdk/static/address`; measured: 3/2000 random keys | The deploy script and quai-service refuse a `CYPRUS1_PK` whose address is not in Cyprus-1, before any RPC call, with a clear message. Use a Cyprus-1 account from a Quai wallet (e.g. Pelagus). | Dry run with a non-Cyprus-1 key → clear refusal |
+| 5 | Transactions must be built and signed with the **quais SDK** (Ethers v6 fork). Ethers/web3 work for reads only with Pelagus. | `build/introduction` ("Migrating your Ethereum App") | web3.py removed; Python never signs Quai transactions or reads `CYPRUS1_PK`; the Node quai-service does all signing. | `web3` uninstalled → full Python suite still passes |
+| 6 | `quais` `ContractFactory.deploy()` **requires a 46-char IPFS CID** (assertion, `contract/factory.js` line 105), but only checks it; it is not sent. The guide gets it from `@quai/hardhat-deploy-metadata`, which **uploads metadata to IPFS**. | quais source; `guides/development/solidity` | **No IPFS integration** (as required): solc already embeds the metadata CID in the bytecode (`bytecodeHash: "ipfs"`); the deploy script extracts it **offline** and passes it. Nothing is uploaded. | Hardhat test "extracts the 46-char metadata CID … offline"; dry run prints `QmPDcfUD…` |
+| 7 | Consequence of 6: **Quaiscan source verification is not available**, because the metadata was never published to IPFS. The contract, its transactions and events are still visible on Orchard QuaiScan. | `guides/development/verifycontract` | Documented limitation. Explorer status in the deployment evidence table will say "transactions visible, source not verified". | n/a (by design) |
+| 8 | Deployment **grinds a 4-byte salt** appended to the init code until the new contract address is in the deployer's zone (`grindContractAddress`). | quais `contract/factory.js` | No constructor arguments, so the appended salt is harmless; the deploy script uses `ContractFactory`, which grinds automatically. | Code read; exercised only on a real deploy (needs approval) |
+| 9 | `JsonRpcProvider` **pathing**: with `usePathing: true` quais appends `/prime`, `/cyprus1`… to the URL, so `…/cyprus1` would become `…/cyprus1/prime` (broken). With `usePathing: false` the URL is used as-is for Cyprus-1. | quais `providers/abstract-provider.js` `constructUrl` | Auto-detect: `RPC_URL` ending in a zone path → `usePathing: false`; bare host → `usePathing: true`. Both forms work. | Live test: both URL forms → chain 15000 |
+| 10 | With a bare host, `getBlockNumber()` defaults to **Prime**, not Cyprus-1 (1,877,832 vs 8,305,618). | measured | The quai-service always asks for `Shard.Cyprus1` explicitly. | Live test: both URL forms report the same Cyprus-1 height |
+| 11 | JSON-RPC uses the `quai_` namespace (`eth_` also answered on Orchard). | `build/introduction` | All calls go through quais. | `quai_chainId` and `eth_chainId` both → `0x3a98` |
+| 12 | Features used by `LogAnchor` (custom errors, `immutable`, events with indexed args, `block.timestamp`, mappings) are standard London-EVM features. No Quai-specific opcodes are needed. | `build/smart-contracts/opcode-additions` lists additions only | No change needed. | Hardhat tests on the London EVM |
+
+## Environment notes (build host only)
+
+- This container reaches Quai hosts only through an HTTPS proxy. Node does not use `HTTPS_PROXY` unless
+  `NODE_USE_ENV_PROXY=1` is set (Node ≥ 22.21). The live tests were run with it. Not needed on a normal Windows PC.
+- `.claude/skills/`, `.cursor/skills/` and `.agents/skills/` contain no Quai Orchard Deployment skill, so none was used.
+- The reference repository (Yaswitha-Kurra/Quai-Network-Contract-Deploy-Example) could not be fetched (GitHub
+  returned 403 from this container), so it was not used. No `.env` or key from it was used.

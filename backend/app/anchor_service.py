@@ -65,7 +65,8 @@ def anchor_batch(c: AppContext, batch_id: int) -> dict:
     row = {"batch_id": batch_id, "onchain_batch_id": str(key), "root": b["root"], "mode": c.anchorer.mode, "chain_id": c.anchorer.chain_id,
            "tx_hash": res["tx_hash"], "block_number": res["block_number"], "block_timestamp": res["block_timestamp"],
            "contract_address": c.anchorer.contract_address,
-           "explorer_url": explorer_tx_url(c.anchorer.chain_id, res["tx_hash"]) if c.anchorer.mode == "REAL" else None,
+           "explorer_url": (res.get("explorer_url") or explorer_tx_url(c.anchorer.chain_id, res["tx_hash"]))
+           if c.anchorer.mode == "REAL" else None,
            "created_at": repo.now_iso()}
     with c.engine.begin() as conn:
         conn.execute(text("INSERT INTO blockchain_anchors(batch_id, onchain_batch_id, root, mode, chain_id, tx_hash, block_number,"

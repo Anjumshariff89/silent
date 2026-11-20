@@ -1,0 +1,20 @@
+{
+  "name": "lace-quai-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local HTTP service that anchors Merkle roots on Quai Orchard Cyprus-1 with the quais SDK",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:broadcast": "node server.js --allow-broadcast",
+    "test": "node --test test/app.test.js",
+    "test:live": "QUAI_LIVE=1 node --test --test-force-exit test/live-readonly.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "16.4.7",
+    "quais": "1.0.0-alpha.58"
+  }
+}
