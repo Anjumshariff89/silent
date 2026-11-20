@@ -38,7 +38,8 @@
 | `GET` | `/api/merkle/{batch_id}` | Get Merkle | merkle |
 | `GET` | `/api/merkle/{batch_id}/proof/{seq_id}` | Get Proof | merkle |
 | `POST` | `/api/proof/verify` | Post Proof Verify | blockchain |
-| `POST` | `/api/verify` | Verify | integrity || `WS` | `/ws/live` | Live push: `log`, `heartbeat`, `agent_status`, `incident`, `integrity`, `anchor` | live |
+| `POST` | `/api/verify` | Verify | integrity |
+| `WS` | `/ws/live` | Live push: `log`, `heartbeat`, `agent_status`, `incident`, `integrity`, `anchor` | live |
 
 There are **no** PUT/PATCH/DELETE routes (enforced by `test_no_update_or_delete_routes_exist`): logs are append-only.
 
@@ -57,3 +58,15 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/veri
 
 `401` bad/missing key or JWT · `404` unknown batch/seq · `409` already anchored / overlapping batch ·
 `422` validation error · `400` empty batch / bad tamper target · `503` RPC unreachable (REAL mode).
+
+## Internal: quai-service (Node.js, `127.0.0.1:8787`)
+
+Not exposed to the dashboard. The backend calls it through `QuaiServiceAnchorer`. Full request/response shapes are in
+`PROJECT_STATE.md` ("Internal API: quai-service").
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/status` | mode (REAL/SIMULATED), chain ID (configured + RPC), wallet address and zone, contract code present, Cyprus-1 block height, `broadcast_allowed` |
+| `POST` | `/anchor` | `{root, batch_id}` → tx hash, block, event timestamp, Orchard QuaiScan URL. 400 bad input, **403 broadcasting disabled**, 409 already anchored, 503 RPC/chain/zone/contract problem |
+| `GET` | `/anchor/{batch_id}` | root + timestamp read from the contract (`getAnchor`), 404 if not anchored |
+| `GET` | `/anchor/{batch_id}/tx` | tx details from the `RootAnchored` event (used to recover an anchor whose DB write failed) |

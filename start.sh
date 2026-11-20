@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Linux/macOS equivalent of start.ps1 (same steps, same ports, same files).
 #   ./start.sh            start backend + agent + dashboard
-#   ./start.sh --verifier also start the standalone verifier
-#   ./start.sh --stop     stop everything started by this script
+#   ./start.sh --verifier         also start the standalone verifier
+#   ./start.sh --allow-broadcast  let the quai-service send Quai transactions (ONLY after you approved them)
+#   ./start.sh --stop             stop everything started by this script
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$(pwd)"; DATA="$ROOT/data"; LOGS="$DATA/runtime_logs"; PIDS="$DATA/pids"
-API_PORT="${API_PORT:-8000}"; WEB_PORT="${WEB_PORT:-3000}"
+API_PORT="${API_PORT:-8000}"; WEB_PORT="${WEB_PORT:-3000}"; QUAI_PORT="${QUAI_SERVICE_PORT:-8787}"
+VERIFIER=0; BROADCAST=0
+for a in "$@"; do case "$a" in --verifier) VERIFIER=1 ;; --allow-broadcast) BROADCAST=1 ;; esac; done
 PY="$ROOT/.venv/bin/python"
 mkdir -p "$LOGS"
 
@@ -34,7 +37,7 @@ wait_http() { for _ in $(seq 1 "$2"); do curl -fsS -o /dev/null "$1" 2>/dev/null
 [ -f "$PIDS" ] && { echo "==> previous run found, stopping it"; stop_all; }
 
 echo "==> Checking prerequisites"
-for port in "$API_PORT" "$WEB_PORT"; do   # allow up to 10 s for a just-stopped run to release ports
+for port in "$API_PORT" "$WEB_PORT" "$QUAI_PORT"; do   # allow up to 10 s for a just-stopped run to release ports
   for i in $(seq 1 10); do curl -s -o /dev/null --max-time 1 "http://127.0.0.1:$port/" || continue 2; sleep 1; done
   echo "Port $port is already in use by another process. Stop it first (./start.sh --stop)."; exit 1
 done
@@ -50,11 +53,19 @@ if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "$REQ_HASH" ]; then
 fi
 [ -f .env ] || { cp .env.example .env; echo "Created .env from .env.example (SIMULATED). Edit it yourself to add keys."; }
 
+( cd backend/blockchain/quai-service
+  [ -d node_modules ] || { echo "==> npm ci (quai-service)"; npm ci --no-audit --no-fund; } )
 ( cd frontend
   [ -d node_modules ] || { echo "==> npm ci"; npm ci --no-audit --no-fund; }
   [ -f .next/BUILD_ID ] || { echo "==> Building dashboard"; NEXT_TELEMETRY_DISABLED=1 npm run build; } )
 
 : > "$PIDS"
+echo "==> Starting quai-service on http://127.0.0.1:$QUAI_PORT ($([ $BROADCAST = 1 ] && echo 'BROADCAST ALLOWED' || echo read-only))"
+QARGS=""; [ "$BROADCAST" = 1 ] && QARGS="--allow-broadcast"
+( cd backend/blockchain/quai-service && QUAI_SERVICE_PORT="$QUAI_PORT" exec nohup node server.js $QARGS < /dev/null > "$LOGS/quai-service.log" 2>&1 ) &
+echo "quai-service $!" >> "$PIDS"
+wait_http "http://127.0.0.1:$QUAI_PORT/status" 30 || { echo "quai-service not healthy; see $LOGS/quai-service.log"; exit 1; }
+
 echo "==> Starting backend on http://127.0.0.1:$API_PORT"
 nohup "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port "$API_PORT" < /dev/null > "$LOGS/backend.log" 2>&1 &
 echo "backend $!" >> "$PIDS"
@@ -64,7 +75,7 @@ echo "==> Starting log agent"
 nohup "$PY" -m backend.agent.agent --server "http://127.0.0.1:$API_PORT" --collector auto < /dev/null > "$LOGS/agent.log" 2>&1 &
 echo "agent $!" >> "$PIDS"
 
-if [ "${1:-}" = "--verifier" ]; then
+if [ "$VERIFIER" = 1 ]; then
   nohup "$PY" -m backend.verifier_service --interval 60 < /dev/null > "$LOGS/verifier.log" 2>&1 &
   echo "verifier $!" >> "$PIDS"
 fi
@@ -77,11 +88,13 @@ wait_http "http://127.0.0.1:$WEB_PORT/login" 60 || { echo "dashboard did not sta
 
 echo
 echo "All services running:"
-"$PY" - "$API_PORT" "$WEB_PORT" <<'EOF'
+"$PY" - "$API_PORT" "$WEB_PORT" "$QUAI_PORT" <<'EOF'
 import json, sys, urllib.request
-api, web = sys.argv[1], sys.argv[2]
+api, web, quai = sys.argv[1], sys.argv[2], sys.argv[3]
 h = json.load(urllib.request.urlopen(f"http://127.0.0.1:{api}/api/health"))
+q = json.load(urllib.request.urlopen(f"http://127.0.0.1:{quai}/status"))
 print(f"  Backend   http://127.0.0.1:{api}/docs  status={h['status']} db={h['database']['backend']}")
+print(f"  Quai svc  http://127.0.0.1:{quai}/status  mode={q['mode']} chain={q['chain_id']} broadcast_allowed={q['broadcast_allowed']}")
 print(f"  Dashboard http://127.0.0.1:{web}")
 print("  Integrations: " + " ".join(f"{k}={v}" for k, v in h["integrations"].items()))
 print("  Login: admin / " + ("dev-local-api-key (simulator dev key)" if h["dev_api_key_in_use"] else "<your API_KEY>"))

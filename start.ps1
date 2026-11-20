@@ -3,8 +3,9 @@
   One-command launcher (Windows 11 / PowerShell): backend API, log agent, dashboard.
 
 .EXAMPLE
-  .\start.ps1                 # set up on first run, then start backend + agent + frontend
+  .\start.ps1                 # set up on first run, then start quai-service + backend + agent + frontend
   .\start.ps1 -WithVerifier   # also start the standalone verifier/anchoring process
+  .\start.ps1 -AllowBroadcast # let the quai-service send Quai transactions (ONLY after you approved them)
   .\start.ps1 -Stop           # stop everything started by this script
   .\start.ps1 -Rebuild        # force reinstall of dependencies and a fresh frontend build
 
@@ -15,8 +16,10 @@ param(
     [switch]$Stop,
     [switch]$WithVerifier,
     [switch]$Rebuild,
+    [switch]$AllowBroadcast,
     [int]$ApiPort = 8000,
-    [int]$WebPort = 3000
+    [int]$WebPort = 3000,
+    [int]$QuaiPort = 8787
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,7 +66,7 @@ if (Test-Path $PidFile) { Write-Step "Previous run found, stopping it first"; St
 
 # ---------------------------------------------------------------- prerequisites
 Write-Step "Checking prerequisites"
-foreach ($port in @($ApiPort, $WebPort)) {
+foreach ($port in @($ApiPort, $WebPort, $QuaiPort)) {
     # allow up to 10 s for a just-stopped previous run to release the port
     for ($i = 0; $i -lt 10 -and (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 1 }
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
@@ -95,6 +98,11 @@ if (-not (Test-Path ".env")) {
     Write-Host "Created .env from .env.example (all integrations SIMULATED). Edit .env yourself to add keys." -ForegroundColor Yellow
 }
 
+# ---------------------------------------------------------------- quai-service (Node.js + quais)
+Push-Location "backend\blockchain\quai-service"
+if ($Rebuild -or -not (Test-Path "node_modules")) { Write-Step "Installing quai-service dependencies (npm ci)"; & npm ci --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw "npm ci (quai-service) failed" } }
+Pop-Location
+
 # ---------------------------------------------------------------- frontend
 Push-Location frontend
 if ($Rebuild -or -not (Test-Path "node_modules")) { Write-Step "Installing frontend dependencies (npm ci)"; & npm ci --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw "npm ci failed" } }
@@ -103,6 +111,16 @@ Pop-Location
 
 # ---------------------------------------------------------------- start services
 $pids = [ordered]@{}
+
+$mode = if ($AllowBroadcast) { "BROADCAST ALLOWED" } else { "read-only" }
+Write-Step "Starting quai-service on http://127.0.0.1:$QuaiPort ($mode)"
+$env:QUAI_SERVICE_PORT = "$QuaiPort"
+$qArgs = @("server.js"); if ($AllowBroadcast) { $qArgs += "--allow-broadcast" }
+$quai = Start-Process -FilePath "node" -PassThru -WindowStyle Hidden -WorkingDirectory (Join-Path $Root "backend\blockchain\quai-service") `
+    -ArgumentList $qArgs `
+    -RedirectStandardOutput (Join-Path $LogDir "quai-service.out.log") -RedirectStandardError (Join-Path $LogDir "quai-service.err.log")
+$pids.quai_service = $quai.Id
+if (-not (Wait-Http "http://127.0.0.1:$QuaiPort/status" 30)) { $pids | ConvertTo-Json | Set-Content $PidFile; throw "quai-service did not start; see $LogDir\quai-service.err.log" }
 
 Write-Step "Starting backend on http://127.0.0.1:$ApiPort"
 $backend = Start-Process -FilePath $Py -PassThru -WindowStyle Hidden `
@@ -138,7 +156,9 @@ if (-not (Wait-Http "http://127.0.0.1:$WebPort/login" 60)) { throw "dashboard di
 $health = Invoke-RestMethod "http://127.0.0.1:$ApiPort/api/health"
 Write-Host ""
 Write-Host "All services running:" -ForegroundColor Green
+$quaiStatus = Invoke-RestMethod "http://127.0.0.1:$QuaiPort/status"
 Write-Host ("  Backend   http://127.0.0.1:{0}/docs   status={1}  db={2}" -f $ApiPort, $health.status, $health.database.backend)
+Write-Host ("  Quai svc  http://127.0.0.1:{0}/status mode={1} chain={2} broadcast_allowed={3}" -f $QuaiPort, $quaiStatus.mode, $quaiStatus.chain_id, $quaiStatus.broadcast_allowed)
 Write-Host ("  Agent     pid {0}  (logs: data\runtime_logs\agent.out.log)" -f $agent.Id)
 Write-Host ("  Dashboard http://127.0.0.1:{0}" -f $WebPort)
 Write-Host ("  Integrations: blockchain={0} database={1} telegram={2} windows_event_log={3}" -f `

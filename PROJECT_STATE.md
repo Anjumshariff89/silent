@@ -12,11 +12,11 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Quai rebuild — Step 11 (End-to-end tests) complete; Step 8 REAL mode still waits for keys + "approve" |
-| Next step | Step 12 — Docs and launch |
+| Current step | Quai rebuild — all 12 steps complete in simulator mode; Step 8 REAL mode waits for operator keys + "approve" |
+| Next step | Operator: Quai keys in .env -> dry run -> "approve" -> deploy; run start.ps1 on Windows |
 | Python | 3.12 (venv at `.venv`) · Node.js LTS (quai-service, Hardhat, frontend) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
-| Build host | Linux cloud container (target platform: Windows 11 / PowerShell) |
+| Build host | Linux cloud container (target platform: Windows 11 / PowerShell). start.ps1 not executed here (no PowerShell); start.sh (same steps) verified from a clean clone. |
 | History | `main` before this rebuild = Polygon Amoy edition (all 12 steps PASS). This edition replaces Polygon/web3.py with Quai via a Node.js `quais` service. |
 
 ## Phase checklist (Quai rebuild — every step is re-verified with a fresh report)
@@ -32,7 +32,7 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 - [x] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer, Orchard QuaiScan links)
 - [x] **Step 10** Frontend (SOC dashboard, "Quai Orchard (REAL)" / "SIMULATED" badges)
 - [x] **Step 11** End-to-end tests (6 scenarios)
-- [ ] **Step 12** Docs and launch (start.ps1 launches backend, agent, quai-service, frontend; deployment evidence table)
+- [x] **Step 12** Docs and launch (start.ps1 launches backend, agent, quai-service, frontend; deployment evidence table)
 
 ## Git branches
 
@@ -537,3 +537,4 @@ quais-only signing, offline metadata CID instead of IPFS, RPC pathing, Prime vs 
 | 2026-11-20 | Q9 | Evidence bundle/PDF: Quai network name, Orchard QuaiScan tx + contract links, explorer_status (source not verified, no IPFS), Quai on-chain check instructions; PolygonScan wording removed. Re-verified live (downloads, fields, standalone offline verify VALID/INVALID, PDF disclaimer). |
 | 2026-11-20 | Q10 | Dashboard: Quai network names, Orchard QuaiScan tx/contract links (`src/lib/quai.ts`), header badge "Quai Orchard (REAL)" / "SIMULATED", evidence explorer link; 0 Polygon references. Bug fixed: a simulator-anchored batch was linked to QuaiScan after switching to REAL mode (now linked only when the anchor itself was REAL). Build/lint/tsc clean, 10 pages 0 console errors, tamper -> red, API error state, mock mode. CLAUDE.md added. |
 | 2026-11-20 | Q11 | E2E: 6 scenarios PASS + scenario 5 via the quai-service path. Totals: pytest 111 (0 skipped, with Postgres), Hardhat 9, quai-service unit 7 + live read-only 4 = 131. Python coverage 91%. |
+| 2026-11-20 | Q12 | start.ps1/start.sh launch quai-service (read-only unless -AllowBroadcast/--allow-broadcast) + backend + agent + dashboard; README rewritten for Quai keys; ARCHITECTURE (Quai diagram, trust boundaries), API (+quai-service), DEMO_SCRIPT, DEPLOYMENT evidence table (not deployed); OpenAPI re-exported. Clean clone: 4 services healthy in 41 s; 6 scenarios PASS via dashboard; scenario screenshots regenerated. |
