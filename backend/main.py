@@ -1,9 +1,4 @@
-"""FastAPI entrypoint. Endpoints are implemented in Step 4+; see PROJECT_STATE.md for the contract."""
-from fastapi import FastAPI
+"""ASGI entrypoint: `uvicorn backend.main:app`. Contract: PROJECT_STATE.md."""
+from backend.app.factory import create_app
 
-app = FastAPI(title="Logs the Attacker Can't Erase", version="0.1.0")
-
-
-@app.get("/api/health")
-def health() -> dict:
-    return {"status": "ok", "phase": "step-1-scaffold"}
+app = create_app()
