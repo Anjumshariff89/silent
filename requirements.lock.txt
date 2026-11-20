@@ -12,6 +12,7 @@ chardet==7.7.0
 charset-normalizer==3.5.2
 ckzg==2.1.8
 click==8.5.1
+coverage==7.6.9
 cytoolz==1.2.0
 eth-account==0.14.0
 eth-hash==0.8.0
