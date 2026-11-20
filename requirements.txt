@@ -4,7 +4,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.32.1
 pydantic==2.10.4
 python-multipart==0.0.20
-websockets==13.1  # web3 7.6.1 requires websockets<14
+websockets==13.1
 # --- Config / auth ---
 python-dotenv==1.0.1
 PyJWT==2.10.1
@@ -14,7 +14,6 @@ psycopg2-binary==2.9.10
 # --- HTTP (agent -> API, Telegram) ---
 httpx==0.28.1
 # --- Blockchain (Polygon Amoy) ---
-web3==7.6.1
 # --- Evidence PDF ---
 reportlab==4.2.5
 # --- Windows Event Log (only installed on Windows; simulator fallback elsewhere) ---

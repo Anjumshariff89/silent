@@ -1,23 +1,25 @@
 {
   "name": "lace-smart-contracts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "LogAnchor contract for Polygon Amoy (chainId 80002)",
+  "description": "LogAnchor contract for Quai Orchard Cyprus-1 (chainId 15000)",
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "node": "hardhat node",
-    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
-    "deploy:amoy": "hardhat run scripts/deploy.js --network amoy",
-    "export-abi": "node scripts/export-abi.js"
+    "export-abi": "node scripts/export-abi.js",
+    "deploy:dry-run": "node scripts/deploy.js",
+    "deploy:cyprus1": "node scripts/deploy.js --broadcast"
   },
-  "dependencies": {
+  "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "2.0.8",
     "@nomicfoundation/hardhat-ethers": "3.0.8",
     "chai": "4.5.0",
-    "dotenv": "16.4.7",
     "ethers": "6.13.4",
     "hardhat": "2.22.17",
-    "solc": "0.8.24"
+    "solc": "0.8.20"
+  },
+  "dependencies": {
+    "dotenv": "16.4.7",
+    "quais": "1.0.0-alpha.58"
   }
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity 0.8.20; // Quai EVM: compiled with evmVersion "london" (no PUSH0), see hardhat.config.js
 
 /// @title LogAnchor - stores Merkle roots of security-log batches.
 /// @notice An anchored root proves only that this commitment existed unchanged since the anchoring

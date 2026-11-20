@@ -1,19 +1,24 @@
-"""Blockchain anchoring: Polygon Amoy via web3.py (REAL) or a local simulated chain (SIMULATED).
+"""Blockchain anchoring: Quai Orchard Cyprus-1 via the local Node.js quai-service (REAL) or a local
+simulated chain (SIMULATED).
 
-The private key is held only inside the eth_account LocalAccount object. It is never logged,
-printed, returned, or included in error messages.
+Quai is not plain Ethereum (zone-specific addresses, quais SDK), so Python never builds, signs or
+broadcasts Quai transactions and never sees CYPRUS1_PK. It only calls the quai-service over
+loopback HTTP (backend/blockchain/quai-service, default http://127.0.0.1:8787).
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-ABI_PATH = Path(__file__).resolve().parent / "LogAnchor.abi.json"
-AMOY_CHAIN_ID = 80002
-AMOY_MIN_PRIORITY_FEE_WEI = 25_000_000_000  # Amoy rejects tips below 25 gwei
+import httpx
+
+QUAI_ORCHARD_CHAIN_ID = 15000
+QUAI_MAINNET_CHAIN_ID = 9
+DEFAULT_QUAI_SERVICE_URL = "http://127.0.0.1:8787"
 
 
 class AnchorError(Exception):
@@ -24,12 +29,18 @@ class AlreadyAnchored(AnchorError):
     pass
 
 
+def _explorer_base(chain_id: int) -> str | None:
+    return {QUAI_ORCHARD_CHAIN_ID: "https://orchard.quaiscan.io", QUAI_MAINNET_CHAIN_ID: "https://quaiscan.io"}.get(chain_id)
+
+
 def explorer_tx_url(chain_id: int, tx_hash: str) -> str | None:
-    return f"https://amoy.polygonscan.com/tx/{tx_hash}" if chain_id == AMOY_CHAIN_ID else None
+    base = _explorer_base(chain_id)
+    return f"{base}/tx/{tx_hash}" if base else None
 
 
 def explorer_address_url(chain_id: int, address: str | None) -> str | None:
-    return f"https://amoy.polygonscan.com/address/{address}" if chain_id == AMOY_CHAIN_ID and address else None
+    base = _explorer_base(chain_id)
+    return f"{base}/address/{address}" if base and address else None
 
 
 def _iso(ts: int | float) -> str:
@@ -47,7 +58,7 @@ class SimulatedChain:
     contract_address = None
     GENESIS_BLOCK = 1_000_000
 
-    def __init__(self, ledger_path: str | Path, chain_id: int = AMOY_CHAIN_ID):
+    def __init__(self, ledger_path: str | Path, chain_id: int = QUAI_ORCHARD_CHAIN_ID):
         self.path = Path(ledger_path)
         self.chain_id = chain_id
         self._lock = threading.Lock()
@@ -100,108 +111,87 @@ class SimulatedChain:
         return None
 
 
-class Web3Anchorer:
-    """Real anchoring through the deployed LogAnchor contract (Polygon Amoy, chainId 80002)."""
+class QuaiServiceAnchorer:
+    """REAL anchoring on Quai Orchard through the local quai-service (Node.js + quais SDK)."""
 
     mode = "REAL"
 
-    def __init__(self, rpc_url: str, private_key: str, contract_address: str, chain_id: int = AMOY_CHAIN_ID,
-                 timeout: int = 180):
-        from eth_account import Account
-        from web3 import Web3
-
-        self.w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 30}))
-        self._account = Account.from_key(private_key)  # key stays inside this object
-        self.address = self._account.address
+    def __init__(self, contract_address: str, chain_id: int = QUAI_ORCHARD_CHAIN_ID,
+                 base_url: str | None = None, timeout: float = 180.0, transport: httpx.BaseTransport | None = None):
+        self.contract_address = contract_address
         self.chain_id = chain_id
-        self.timeout = timeout
-        self.contract_address = Web3.to_checksum_address(contract_address)
-        self.contract = self.w3.eth.contract(address=self.contract_address,
-                                             abi=json.loads(ABI_PATH.read_text(encoding="utf-8")))
+        self.base_url = (base_url or os.getenv("QUAI_SERVICE_URL") or DEFAULT_QUAI_SERVICE_URL).rstrip("/")
+        self._client = httpx.Client(base_url=self.base_url, timeout=timeout, transport=transport, trust_env=False)
+        self.address = None  # wallet address, filled from /status
 
-    def __repr__(self) -> str:  # never expose the key via repr
-        return f"Web3Anchorer(address={self.address}, chain_id={self.chain_id}, contract={self.contract_address})"
+    def __repr__(self) -> str:
+        return f"QuaiServiceAnchorer(service={self.base_url}, chain_id={self.chain_id}, contract={self.contract_address})"
+
+    def _request(self, method: str, path: str, **kw) -> httpx.Response:
+        try:
+            return self._client.request(method, path, **kw)
+        except httpx.HTTPError as exc:
+            raise AnchorError(f"quai-service unreachable at {self.base_url} ({type(exc).__name__})") from None
+
+    @staticmethod
+    def _detail(r: httpx.Response) -> str:
+        try:
+            return str(r.json().get("detail", r.text))[:300]
+        except ValueError:
+            return r.text[:300]
+
+    def status(self) -> dict | None:
+        try:
+            r = self._request("GET", "/status")
+        except AnchorError:
+            return None
+        if r.status_code != 200:
+            return None
+        st = r.json()
+        self.address = st.get("wallet_address")
+        return st
 
     def connected(self) -> bool:
-        try:
-            return self.w3.is_connected() and self.w3.eth.chain_id == self.chain_id
-        except Exception:
-            return False
+        st = self.status()
+        return bool(st and st.get("mode") == "REAL" and st.get("connected") and st.get("chain_id") == self.chain_id)
 
     def latest_block(self) -> int | None:
-        try:
-            return self.w3.eth.block_number
-        except Exception:
-            return None
-
-    def _check_chain(self) -> None:
-        try:
-            actual = self.w3.eth.chain_id
-        except Exception as exc:
-            raise AnchorError(f"RPC unreachable ({type(exc).__name__})") from None
-        if actual != self.chain_id:
-            raise AnchorError(f"RPC chain_id {actual} != configured CHAIN_ID {self.chain_id}")
+        st = self.status()
+        return st.get("latest_block") if st else None
 
     def anchor(self, root_hex: str, batch_id: int) -> dict:
-        self._check_chain()
-        if self.contract.functions.isAnchored(batch_id).call():
-            raise AlreadyAnchored(f"batch {batch_id} already anchored on-chain")
-        try:
-            tx = self.contract.functions.anchorRoot(bytes.fromhex(root_hex), batch_id).build_transaction({
-                "from": self.address,
-                "nonce": self.w3.eth.get_transaction_count(self.address, "pending"),
-                "chainId": self.chain_id,
-            })
-            if self.chain_id == AMOY_CHAIN_ID and tx.get("maxPriorityFeePerGas", 0) < AMOY_MIN_PRIORITY_FEE_WEI:
-                bump = AMOY_MIN_PRIORITY_FEE_WEI - tx["maxPriorityFeePerGas"]
-                tx["maxPriorityFeePerGas"] = AMOY_MIN_PRIORITY_FEE_WEI
-                tx["maxFeePerGas"] = tx["maxFeePerGas"] + bump
-            signed = self._account.sign_transaction(tx)
-            tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=self.timeout)
-        except AnchorError:
-            raise
-        except Exception as exc:  # message deliberately excludes key material
-            raise AnchorError(f"anchoring transaction failed ({type(exc).__name__}: {str(exc)[:160]})") from None
-        if receipt["status"] != 1:
-            raise AnchorError(f"anchoring transaction reverted: {receipt['transactionHash'].hex()}")
-        block = self.w3.eth.get_block(receipt["blockNumber"])
-        h = receipt["transactionHash"].hex()
-        return {"tx_hash": h if h.startswith("0x") else "0x" + h, "block_number": receipt["blockNumber"],
-                "block_timestamp": _iso(block["timestamp"])}
-
-    def find_anchor_tx(self, batch_id: int, window: int = 10_000, max_windows: int = 50) -> dict | None:
-        """Search RootAnchored events (newest first, in RPC-friendly block windows) for this batch key."""
-        self._check_chain()
-        latest = self.w3.eth.block_number
-        end = latest
-        for _ in range(max_windows):
-            start = max(0, end - window + 1)
-            try:
-                logs = self.contract.events.RootAnchored.get_logs(from_block=start, to_block=end,
-                                                                 argument_filters={"batchId": batch_id})
-            except Exception:
-                return None
-            if logs:
-                ev = logs[-1]
-                h = ev["transactionHash"].hex()
-                return {"root": ev["args"]["root"].hex().removeprefix("0x"),
-                        "tx_hash": h if h.startswith("0x") else "0x" + h, "block_number": ev["blockNumber"],
-                        "block_timestamp": _iso(ev["args"]["timestamp"])}
-            if start == 0:
-                break
-            end = start - 1
-        return None
+        r = self._request("POST", "/anchor", json={"root": root_hex, "batch_id": str(batch_id)})
+        if r.status_code == 409:
+            raise AlreadyAnchored(self._detail(r))
+        if r.status_code != 200:
+            raise AnchorError(f"quai-service anchor failed (HTTP {r.status_code}): {self._detail(r)}")
+        d = r.json()
+        return {"tx_hash": d["tx_hash"], "block_number": d["block_number"], "block_timestamp": d["block_timestamp"],
+                "explorer_url": d.get("explorer_url")}
 
     def get_anchor(self, batch_id: int) -> dict | None:
-        self._check_chain()
-        root, ts, _submitter = self.contract.functions.getAnchor(batch_id).call()
-        if ts == 0:
+        r = self._request("GET", f"/anchor/{batch_id}")
+        if r.status_code == 404:
             return None
-        return {"root": root.hex().removeprefix("0x"), "block_timestamp": _iso(ts)}
+        if r.status_code != 200:
+            raise AnchorError(f"quai-service lookup failed (HTTP {r.status_code}): {self._detail(r)}")
+        d = r.json()
+        return {"root": d["root"], "block_timestamp": d["block_timestamp"]}
+
+    def find_anchor_tx(self, batch_id: int) -> dict | None:
+        r = self._request("GET", f"/anchor/{batch_id}/tx")
+        if r.status_code != 200:
+            return None
+        d = r.json()
+        return {"root": d["root"], "tx_hash": d["tx_hash"], "block_number": d["block_number"],
+                "block_timestamp": d["block_timestamp"]}
 
 
 def make_anchorer(settings, ledger_path: str | Path):
-    # Quai is not plain Ethereum: real anchoring goes through the Node.js quai-service (Step 8), never
-    # web3.py. Until that exists, Quai keys must not reach Web3Anchorer, so always use the simulator.
+    """REAL (quai-service) when RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS are all set, else the simulator.
+
+    Python only checks that the keys are configured; it never reads or forwards CYPRUS1_PK.
+    """
+    if settings.blockchain_real:
+        return QuaiServiceAnchorer(settings.contract_address, settings.chain_id)
     return SimulatedChain(ledger_path, settings.chain_id)
