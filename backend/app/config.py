@@ -1,0 +1,103 @@
+"""Central configuration.
+
+Keys are loaded from `.env` with python-dotenv. Key *values* are never logged, printed or
+returned by any endpoint: only whether each integration is REAL or SIMULATED.
+"""
+from __future__ import annotations
+
+import os
+import secrets
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
+
+# Non-secret default used ONLY when MODE=simulator and API_KEY is empty, so the local demo works
+# out of the box. MODE=real refuses to start without a real API_KEY and JWT_SECRET.
+DEV_API_KEY = "dev-local-api-key"
+
+
+def _env(name: str, default: str = "") -> str:
+    return (os.getenv(name) or default).strip()
+
+
+@dataclass
+class Settings:
+    mode: str = "simulator"
+    api_key: str = field(default="", repr=False)
+    jwt_secret: str = field(default="", repr=False)
+    database_url: str = "sqlite:///./local.db"
+    amoy_rpc_url: str = field(default="", repr=False)
+    anchor_private_key: str = field(default="", repr=False)
+    contract_address: str = ""
+    chain_id: int = 80002
+    telegram_bot_token: str = field(default="", repr=False)
+    telegram_chat_id: str = field(default="", repr=False)
+    # Optional tuning (not secrets, not in .env.example; sensible defaults).
+    heartbeat_online_s: float = 20.0
+    heartbeat_offline_s: float = 60.0
+    monitor_interval_s: float = 5.0
+    using_dev_api_key: bool = False
+
+    # ---- integration modes (drive REAL/SIMULATED badges) ----
+    @property
+    def blockchain_real(self) -> bool:
+        return bool(self.amoy_rpc_url and self.anchor_private_key and self.contract_address)
+
+    @property
+    def database_real(self) -> bool:
+        return self.database_url.startswith(("postgresql://", "postgresql+psycopg2://", "postgres://"))
+
+    @property
+    def telegram_real(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_chat_id)
+
+    def integration_modes(self) -> dict[str, str]:
+        from backend.agent.collector import windows_collector_available  # local import: avoid cycle
+
+        def badge(flag: bool) -> str:
+            return "REAL" if flag else "SIMULATED"
+
+        return {
+            "blockchain": badge(self.blockchain_real),
+            "database": badge(self.database_real),
+            "telegram": badge(self.telegram_real),
+            "windows_event_log": badge(windows_collector_available()),
+        }
+
+
+def load_settings(env_file: str | os.PathLike | None = None) -> Settings:
+    load_dotenv(env_file or PROJECT_ROOT / ".env", override=False)
+    mode = _env("MODE", "simulator").lower()
+    api_key = _env("API_KEY")
+    jwt_secret = _env("JWT_SECRET")
+    if mode == "real" and (not api_key or not jwt_secret):
+        raise RuntimeError("MODE=real requires API_KEY and JWT_SECRET to be set in .env")
+    using_dev = False
+    if not api_key:
+        api_key, using_dev = DEV_API_KEY, True
+    if not jwt_secret:
+        jwt_secret = secrets.token_urlsafe(48)  # per-process; tokens expire on restart
+    db_url = _env("DATABASE_URL", "sqlite:///./local.db")
+    if db_url.startswith("sqlite:///./"):
+        # Resolve relative SQLite paths against the project root, not the CWD.
+        db_url = "sqlite:///" + str((PROJECT_ROOT / db_url[len("sqlite:///./"):]).as_posix())
+    return Settings(
+        mode=mode,
+        api_key=api_key,
+        jwt_secret=jwt_secret,
+        database_url=db_url,
+        amoy_rpc_url=_env("AMOY_RPC_URL"),
+        anchor_private_key=_env("ANCHOR_PRIVATE_KEY"),
+        contract_address=_env("CONTRACT_ADDRESS"),
+        chain_id=int(_env("CHAIN_ID", "80002")),
+        telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
+        heartbeat_online_s=float(_env("HEARTBEAT_ONLINE_SECONDS", "20")),
+        heartbeat_offline_s=float(_env("HEARTBEAT_OFFLINE_SECONDS", "60")),
+        monitor_interval_s=float(_env("MONITOR_INTERVAL_SECONDS", "5")),
+        using_dev_api_key=using_dev,
+    )
