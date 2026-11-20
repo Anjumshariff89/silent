@@ -30,10 +30,11 @@ class Settings:
     api_key: str = field(default="", repr=False)
     jwt_secret: str = field(default="", repr=False)
     database_url: str = "sqlite:///./local.db"
-    amoy_rpc_url: str = field(default="", repr=False)
-    anchor_private_key: str = field(default="", repr=False)
+    # Quai Orchard Cyprus-1 testnet (used only by the Node.js quai-service; Python never signs)
+    rpc_url: str = field(default="", repr=False)
+    cyprus1_pk: str = field(default="", repr=False)
     contract_address: str = ""
-    chain_id: int = 80002
+    chain_id: int = 15000
     telegram_bot_token: str = field(default="", repr=False)
     telegram_chat_id: str = field(default="", repr=False)
     # Optional tuning (not secrets, not in .env.example; sensible defaults).
@@ -45,7 +46,7 @@ class Settings:
     # ---- integration modes (drive REAL/SIMULATED badges) ----
     @property
     def blockchain_real(self) -> bool:
-        return bool(self.amoy_rpc_url and self.anchor_private_key and self.contract_address)
+        return bool(self.rpc_url and self.cyprus1_pk and self.contract_address)
 
     @property
     def database_real(self) -> bool:
@@ -90,10 +91,10 @@ def load_settings(env_file: str | os.PathLike | None = None) -> Settings:
         api_key=api_key,
         jwt_secret=jwt_secret,
         database_url=db_url,
-        amoy_rpc_url=_env("AMOY_RPC_URL"),
-        anchor_private_key=_env("ANCHOR_PRIVATE_KEY"),
+        rpc_url=_env("RPC_URL"),
+        cyprus1_pk=_env("CYPRUS1_PK"),
         contract_address=_env("CONTRACT_ADDRESS"),
-        chain_id=int(_env("CHAIN_ID", "80002")),
+        chain_id=int(_env("CHAIN_ID", "15000")),
         telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
         heartbeat_online_s=float(_env("HEARTBEAT_ONLINE_SECONDS", "20")),

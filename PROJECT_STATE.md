@@ -1,6 +1,7 @@
-# PROJECT_STATE — Logs the Attacker Can't Erase
+# PROJECT_STATE — Logs the Attacker Can't Erase (Quai Orchard edition)
 
-Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockchain anchoring.
+Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockchain anchoring on
+**Quai Orchard Cyprus-1 testnet** (chain ID 15000).
 
 > **What blockchain anchoring proves and does not prove:** an anchored Merkle root proves only
 > that the *commitment* (the set of log hashes in that batch) has not changed since the moment it
@@ -11,48 +12,65 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Step 12 — Docs and launch (complete). All steps done. |
-| Next step | Run REAL mode on Windows with your keys (see README) |
-| Python | 3.12 (venv at `.venv`) |
+| Current step | Quai rebuild — Step 1 (Setup and contract) complete |
+| Next step | Step 2 — Database (re-verify) |
+| Python | 3.12 (venv at `.venv`) · Node.js LTS (quai-service, Hardhat, frontend) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
-| Build host | Linux cloud container (target platform: Windows 11 / PowerShell). start.ps1 not executed here; start.sh (same steps) verified from a clean clone. |
+| Build host | Linux cloud container (target platform: Windows 11 / PowerShell) |
+| History | `main` before this rebuild = Polygon Amoy edition (all 12 steps PASS). This edition replaces Polygon/web3.py with Quai via a Node.js `quais` service. |
 
-## Phase checklist
+## Phase checklist (Quai rebuild — every step is re-verified with a fresh report)
 
-- [x] **Step 1** Setup and contract (folder tree, venv, git branches, .env.example, .gitignore, this contract)
-- [x] **Step 2** Database (schema.sql for SQLite + Postgres/Supabase, 8 tables, restricted role)
-- [~] **Step 3** Log agent (simulator, fallback, heartbeat, HTTPS, append-only verified; **real Windows collector NOT run — Linux build host**)
-- [x] **Step 4** FastAPI core (ingest, logs, heartbeats, agents, health, API-key + JWT auth, /ws/live)
-- [x] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash linking)
-- [x] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
-- [x] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
-- [x] **Step 8** Blockchain (Solidity anchorRoot, Hardhat, web3.py real + simulator)
-- [x] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer)
-- [x] **Step 10** Frontend (Next.js + TS + Tailwind SOC dashboard, 12 pages)
-- [x] **Step 11** End-to-end tests (6 scenarios)
-- [x] **Step 12** Docs and launch (start.ps1, README, OpenAPI, demo script)
+- [x] **Step 1** Setup and contract: Quai `.env.example` (10 keys), `backend/blockchain/quai-service/`, 4 branches, this contract
+- [ ] **Step 2** Database (schema.sql SQLite + Postgres/Supabase, 8 tables, restricted role)
+- [ ] **Step 3** Log agent (Windows Event Log 4624/4634/4672/4673 via pywin32, simulator fallback, heartbeat 10 s)
+- [ ] **Step 4** FastAPI core (ingest, logs, heartbeats, agents, health, API-key + JWT auth, /ws/live)
+- [ ] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash)
+- [ ] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
+- [ ] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
+- [ ] **Step 8** Blockchain on Quai Orchard (Solidity 0.8.20 `anchorRoot`, Hardhat `cyprus1`, Node.js quais service `/anchor` `/status`, simulator; **no broadcast until operator replies "approve"**)
+- [ ] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer, Orchard QuaiScan links)
+- [ ] **Step 10** Frontend (SOC dashboard, "Quai Orchard (REAL)" / "SIMULATED" badges)
+- [ ] **Step 11** End-to-end tests (6 scenarios)
+- [ ] **Step 12** Docs and launch (start.ps1 launches backend, agent, quai-service, frontend; deployment evidence table)
 
 ## Git branches
 
 | Branch | Used for |
 |---|---|
 | `main` | Merged, verified work only (Overall = PASS) |
-| `feature/log-collection` | Steps 2–4 (database, agent, API core) |
+| `feature/log-collection` | Steps 1–4 (setup, database, agent, API core) |
 | `feature/tamper-detection` | Steps 5–7 (hash chain, tamper detection, Merkle) |
-| `feature/blockchain` | Steps 8–9 (contract, anchoring, evidence) |
-| `feature/frontend` | Step 10 (dashboard) |
+| `feature/blockchain` | Steps 8–9 (Quai contract, quai-service, evidence) |
+| `feature/frontend` | Steps 10–12 (dashboard, E2E, docs) |
+| `feature/quai-orchard` | Earlier Quai experiment, not by this build. Left untouched; not merged. |
+
+## Environment variables (`.env`, git-ignored; `.env.example` holds exactly these 10)
+
+| Variable | Default | Used by | Purpose |
+|---|---|---|---|
+| `MODE` | `simulator` | backend | `real` refuses to start without `API_KEY` and `JWT_SECRET` |
+| `API_KEY` | empty (dev key in simulator) | backend, agent | Agent `X-API-Key`; dashboard password |
+| `JWT_SECRET` | empty (random per start) | backend | Signs dashboard JWTs |
+| `DATABASE_URL` | `sqlite:///./local.db` | backend | SQLite or Supabase Postgres |
+| `RPC_URL` | empty | quai-service | Quai Orchard Cyprus-1 RPC (confirm on docs.qu.ai) |
+| `CYPRUS1_PK` | empty | quai-service only | Throwaway Cyprus-1 testnet key. **Never** read by Python, never logged |
+| `CHAIN_ID` | `15000` | backend, quai-service | Guard: refuse to sign if the RPC reports another chain |
+| `CONTRACT_ADDRESS` | empty | backend, quai-service | Deployed `LogAnchor` on Cyprus-1 |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | empty | backend | Incident alerts |
 
 ## Integrations & fallbacks
 
 | Integration | Env keys | REAL when | Fallback (SIMULATED) |
 |---|---|---|---|
-| Polygon Amoy (web3.py) | `AMOY_RPC_URL`, `ANCHOR_PRIVATE_KEY`, `CONTRACT_ADDRESS`, `CHAIN_ID=80002` | all three non-empty | Local blockchain simulator |
-| Supabase Postgres (SQLAlchemy) | `DATABASE_URL` | starts with `postgresql://` | SQLite (`sqlite:///./local.db`) |
-| Telegram Bot API | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | both non-empty | Console log |
-| Windows Event Log (pywin32) | — | Windows host + pywin32 importable | Event simulator |
-| PolygonScan Amoy links | — (no key) | always (link built from tx hash) | Link marked "simulated tx" |
+| Quai Orchard Cyprus-1 (Node.js `quais` service, chain 15000) | `RPC_URL`, `CYPRUS1_PK`, `CHAIN_ID`, `CONTRACT_ADDRESS` | all set **and** quai-service reachable (Step 8) | Local blockchain simulator |
+| Supabase Postgres (SQLAlchemy) | `DATABASE_URL` | starts with `postgresql://` | SQLite |
+| Telegram Bot API | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | both set | Console log |
+| Windows Event Log (pywin32) | — | Windows + pywin32 importable | Event simulator |
+| Orchard QuaiScan links | — (no key) | REAL anchors | none shown |
 
-Out of scope (do **not** integrate): AbuseIPDB, IPFS, OpenTimestamps, Slack.
+Not integrated (by requirement): Polygon, x402 Work, Hashference, AbuseIPDB, IPFS, OpenTimestamps, Slack.
+Python never uses web3.py for Quai (Quai addresses are zone-specific and need the `quais` SDK).
 
 ---
 
@@ -362,12 +380,12 @@ Response 200:
   "onchain_batch_id": "6256315520342587137...",
   "root": "c3d9...",
   "mode": "SIMULATED",
-  "chain_id": 80002,
+  "chain_id": 15000,
   "tx_hash": "0x5e1f...",
   "block_number": 1234567,
   "block_timestamp": "2026-11-20T14:33:00Z",
   "contract_address": "0x...",
-  "explorer_url": "https://amoy.polygonscan.com/tx/0x5e1f..."
+  "explorer_url": "https://orchard.quaiscan.io/tx/0x5e1f..."
 }
 ```
 Errors: 404 (no batch), 409 (already anchored), 503 (RPC unavailable in REAL mode). In SIMULATED mode `explorer_url` is `null`.
@@ -379,7 +397,7 @@ Response 200:
 ```json
 {
   "mode": "SIMULATED",
-  "chain_id": 80002,
+  "chain_id": 15000,
   "connected": true,
   "contract_address": null,
   "latest_block": 1234570,
@@ -406,7 +424,7 @@ Response 200:
   "anchored_root": "c3d9...",
   "inclusion_proof_valid": true,
   "tx_hash": "0x5e1f...",
-  "explorer_url": "https://amoy.polygonscan.com/tx/0x5e1f...",
+  "explorer_url": "https://orchard.quaiscan.io/tx/0x5e1f...",
   "note": "MATCH means the logs in this batch hash to the root anchored at block 1234567. It does not prove the events themselves occurred."
 }
 ```
@@ -424,7 +442,7 @@ Response 200 (`Content-Disposition: attachment; filename=evidence_batch_7.json`)
   "hash_algorithm": "SHA-256",
   "canonicalization": "JSON, sorted keys, no whitespace, UTF-8",
   "proofs": { "42": [ { "position": "right", "hash": "aa01..." } ] },
-  "anchor": { "mode": "SIMULATED", "chain_id": 80002, "tx_hash": "0x5e1f...", "block_number": 1234567, "block_timestamp": "...", "contract_address": null, "explorer_url": null },
+  "anchor": { "mode": "SIMULATED", "chain_id": 15000, "tx_hash": "0x5e1f...", "block_number": 1234567, "block_timestamp": "...", "contract_address": null, "explorer_url": null },
   "verification": { "result": "MATCH", "verified_at": "2026-11-20T14:35:00Z" },
   "disclaimer": "Blockchain anchoring proves only that this Merkle root has not changed since it was anchored. It does not prove that the logged events occurred or that logs were accurate before anchoring."
 }
@@ -450,6 +468,25 @@ Server → client messages (JSON, one per event):
 Connection without a valid token is closed with code 1008 (policy violation).
 
 ---
+
+## Internal API: quai-service (Node.js, local port `8787`, loopback only)
+
+The FastAPI backend is the only client. No auth header is needed because it binds to `127.0.0.1` only.
+
+### `GET /status`
+```json
+{ "mode": "REAL", "network": "Quai Orchard Cyprus-1", "chain_id": 15000, "rpc_chain_id": 15000,
+  "connected": true, "contract_address": "0x00...", "wallet_address": "0x00...", "latest_block": 123456 }
+```
+`mode` is `SIMULATED` when keys are missing. The private key is never returned.
+
+### `POST /anchor`
+Request: `{ "root": "<64 hex>", "batch_id": "<uint256 as decimal string>" }`
+Response 200: `{ "tx_hash": "0x...", "block_number": 123457, "block_timestamp": "2026-...Z", "explorer_url": "https://orchard.quaiscan.io/tx/0x..." }`
+Errors: `409` already anchored, `400` bad input, `503` RPC unreachable / chain ID mismatch, `403` broadcasting not approved.
+
+### `GET /anchor/{batch_id}`
+Response 200: `{ "batch_id": "...", "root": "<64 hex>", "timestamp": 1790000000 }` or `404` when not anchored.
 
 ## Additional endpoints (beyond the original contract)
 
@@ -478,3 +515,4 @@ Connection without a valid token is closed with code 1008 (policy violation).
 | 2026-11-20 | 10 | Next.js 14.2.35 dashboard (10 pages + login), mock mode, live WebSocket, tamper demo. Screenshots in documentation/screenshots. |
 | 2026-11-20 | 11 | 6-scenario E2E test; route-coverage check found 2 untested routes (fixed); config unit tests added; coverage 88%. Added coverage==7.6.9. |
 | 2026-11-20 | 12 | start.ps1 + start.sh, README per-key setup, OpenAPI export, ARCHITECTURE/API/DEMO docs. Clean-clone launch verified with start.sh; fixed 3 launcher bugs (stdout held open / wrong PID, port collision false positive, restart race). 6 scenarios passed through the dashboard. |
+| 2026-11-20 | Q1 | Quai rebuild started from `main` (+ migration fix). `.env.example` = 10 Quai keys; config reads `RPC_URL`/`CYPRUS1_PK`/`CHAIN_ID=15000`/`CONTRACT_ADDRESS`; Quai keys never reach web3.py (simulator until quai-service in Step 8); `/api/health` blockchain badge now reflects the anchorer actually in use. `backend/blockchain/quai-service/` created. |
