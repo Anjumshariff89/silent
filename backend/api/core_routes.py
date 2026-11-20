@@ -75,7 +75,9 @@ def health(request: Request) -> dict:
     except Exception as exc:
         db = {"status": "error", "backend": c.engine.dialect.name, "error": type(exc).__name__}
     return {"status": "ok" if db["status"] == "ok" else "degraded", "version": request.app.version,
-            "mode": c.settings.mode, "database": db, "integrations": c.settings.integration_modes(),
+            "mode": c.settings.mode, "database": db,
+            # blockchain badge comes from the anchorer actually in use, not just from which keys are set
+            "integrations": {**c.settings.integration_modes(), "blockchain": c.anchorer.mode},
             "dev_api_key_in_use": c.settings.using_dev_api_key, "log_count": log_count, "time": repo.now_iso()}
 
 

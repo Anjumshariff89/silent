@@ -9,7 +9,7 @@ from backend.app.integrity_service import integrity_status, run_chain_verificati
 
 
 def _clear(monkeypatch):
-    for k in ("MODE", "API_KEY", "JWT_SECRET", "DATABASE_URL", "AMOY_RPC_URL", "ANCHOR_PRIVATE_KEY",
+    for k in ("MODE", "API_KEY", "JWT_SECRET", "DATABASE_URL", "RPC_URL", "CYPRUS1_PK",
               "CONTRACT_ADDRESS", "CHAIN_ID", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         monkeypatch.delenv(k, raising=False)
 
@@ -18,7 +18,7 @@ def test_config_simulator_defaults(monkeypatch, tmp_path):
     _clear(monkeypatch)
     s = cfg.load_settings(tmp_path / "missing.env")
     assert s.mode == "simulator" and s.api_key == cfg.DEV_API_KEY and s.using_dev_api_key
-    assert len(s.jwt_secret) >= 32 and s.chain_id == 80002
+    assert len(s.jwt_secret) >= 32 and s.chain_id == 15000
     assert s.integration_modes() == {"blockchain": "SIMULATED", "database": "SIMULATED", "telegram": "SIMULATED",
                                      "windows_event_log": "SIMULATED"}
     assert s.database_url.startswith("sqlite:///") and s.database_url.endswith("/local.db")
@@ -33,8 +33,8 @@ def test_config_real_mode_requires_keys(monkeypatch, tmp_path):
 
 def test_config_badges_turn_real_only_when_all_keys_set(monkeypatch, tmp_path):
     _clear(monkeypatch)
-    monkeypatch.setenv("AMOY_RPC_URL", "https://rpc.example")
-    monkeypatch.setenv("ANCHOR_PRIVATE_KEY", "0x" + "1" * 64)
+    monkeypatch.setenv("RPC_URL", "https://rpc.example")
+    monkeypatch.setenv("CYPRUS1_PK", "0x" + "1" * 64)
     s = cfg.load_settings(tmp_path / "x.env")
     assert s.integration_modes()["blockchain"] == "SIMULATED"  # contract address still missing
     monkeypatch.setenv("CONTRACT_ADDRESS", "0x" + "2" * 40)
@@ -48,7 +48,7 @@ def test_config_badges_turn_real_only_when_all_keys_set(monkeypatch, tmp_path):
 def test_settings_repr_hides_secrets(monkeypatch, tmp_path):
     _clear(monkeypatch)
     monkeypatch.setenv("API_KEY", "super-secret-api-key")
-    monkeypatch.setenv("ANCHOR_PRIVATE_KEY", "0x" + "ab" * 32)
+    monkeypatch.setenv("CYPRUS1_PK", "0x" + "ab" * 32)
     r = repr(cfg.load_settings(tmp_path / "x.env"))
     assert "super-secret-api-key" not in r and "ab" * 32 not in r
 
@@ -98,3 +98,16 @@ def test_merkle_batches_list_route(client, jwt_headers, ingest):
     items = client.get("/api/merkle/batches", headers=jwt_headers).json()["items"]
     assert len(items) == 1 and items[0]["root"] == b["root"] and items[0]["tx_hash"].startswith("0x")
     assert items[0]["mode"] == "SIMULATED"
+
+
+def test_quai_keys_never_reach_web3_and_badge_stays_truthful(tmp_path):
+    """Until the quai-service exists, full Quai keys still give a simulated anchorer and a SIMULATED badge."""
+    from fastapi.testclient import TestClient
+    from backend.app.factory import create_app
+    from tests.conftest import make_settings
+    s = make_settings(tmp_path, rpc_url="https://rpc.example", cyprus1_pk="0x" + "1" * 64,
+                      contract_address="0x" + "2" * 40)
+    app = create_app(s, run_monitor=False)
+    assert app.state.ctx.anchorer.mode == "SIMULATED"
+    with TestClient(app) as c:
+        assert c.get("/api/health").json()["integrations"]["blockchain"] == "SIMULATED"

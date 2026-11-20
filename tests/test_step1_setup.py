@@ -10,10 +10,10 @@ EXPECTED_ENV_LINES = [
     "API_KEY=",
     "JWT_SECRET=",
     "DATABASE_URL=sqlite:///./local.db",
-    "AMOY_RPC_URL=",
-    "ANCHOR_PRIVATE_KEY=",
+    "RPC_URL=",
+    "CYPRUS1_PK=",
+    "CHAIN_ID=15000",
     "CONTRACT_ADDRESS=",
-    "CHAIN_ID=80002",
     "TELEGRAM_BOT_TOKEN=",
     "TELEGRAM_CHAT_ID=",
 ]
@@ -44,6 +44,7 @@ def test_folder_structure():
     for sub in ["app", "agent", "crypto", "merkle", "blockchain", "database", "api", "integrations"]:
         assert (ROOT / "backend" / sub).is_dir(), sub
     assert (ROOT / "backend" / "main.py").is_file()
+    assert (ROOT / "backend" / "blockchain" / "quai-service").is_dir()
     for d in ["frontend", "smart-contracts", "tests", "documentation"]:
         assert (ROOT / d).is_dir(), d
     for f in [".env.example", ".gitignore", "requirements.txt", "README.md", "start.ps1", "PROJECT_STATE.md"]:
@@ -87,3 +88,15 @@ def test_feature_branches_exist():
     for b in ["main", "feature/log-collection", "feature/tamper-detection",
               "feature/blockchain", "feature/frontend"]:
         assert b in out, b
+
+
+def test_env_example_has_no_polygon_or_extra_keys():
+    text = (ROOT / ".env.example").read_text()
+    for banned in ("AMOY", "POLYGON", "ANCHOR_PRIVATE_KEY", "QUAI_CONTRACT_ADDRESS", "#"):
+        assert banned not in text, banned
+
+
+def test_node_is_available():
+    out = subprocess.run(["node", "--version"], capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.startswith("v")
+    assert int(out.stdout[1:].split(".")[0]) >= 20, out.stdout

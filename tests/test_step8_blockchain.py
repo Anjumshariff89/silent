@@ -19,7 +19,7 @@ def _anchor_first_batch(client, jwt_headers, ingest, n=6):
 
 def test_simulator_anchor_returns_tx_block_timestamp(client, jwt_headers, ingest):
     b, a = _anchor_first_batch(client, jwt_headers, ingest)
-    assert a["mode"] == "SIMULATED" and a["root"] == b["root"] and a["chain_id"] == 80002
+    assert a["mode"] == "SIMULATED" and a["root"] == b["root"] and a["chain_id"] == 15000  # simulator reports the configured Quai Cyprus-1 CHAIN_ID
     assert re.fullmatch(r"0x[0-9a-f]{64}", a["tx_hash"])
     assert isinstance(a["block_number"], int) and a["block_number"] > 0
     assert a["block_timestamp"].endswith("Z") and a["explorer_url"] is None

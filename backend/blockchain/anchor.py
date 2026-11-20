@@ -202,7 +202,6 @@ class Web3Anchorer:
 
 
 def make_anchorer(settings, ledger_path: str | Path):
-    if settings.blockchain_real:
-        return Web3Anchorer(settings.amoy_rpc_url, settings.anchor_private_key, settings.contract_address,
-                            settings.chain_id)
+    # Quai is not plain Ethereum: real anchoring goes through the Node.js quai-service (Step 8), never
+    # web3.py. Until that exists, Quai keys must not reach Web3Anchorer, so always use the simulator.
     return SimulatedChain(ledger_path, settings.chain_id)
