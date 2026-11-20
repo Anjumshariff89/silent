@@ -11,8 +11,8 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Step 1 — Setup and contract (complete) |
-| Next step | Step 2 — Database |
+| Current step | Step 4 — FastAPI core (complete) |
+| Next step | Step 5 — Hash chain |
 | Python | 3.12 (venv at `.venv`) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
 | Build host so far | Linux cloud container (target platform: Windows 11 / PowerShell) |
@@ -20,9 +20,9 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 ## Phase checklist
 
 - [x] **Step 1** Setup and contract (folder tree, venv, git branches, .env.example, .gitignore, this contract)
-- [ ] **Step 2** Database (schema.sql for SQLite + Postgres/Supabase, 8 tables, restricted role)
-- [ ] **Step 3** Log agent (Windows Event Log 4624/4634/4672/4673 via pywin32, simulator fallback, heartbeat 10 s)
-- [ ] **Step 4** FastAPI core (ingest, logs, heartbeats, agents, health, API-key + JWT auth, /ws/live)
+- [x] **Step 2** Database (schema.sql for SQLite + Postgres/Supabase, 8 tables, restricted role)
+- [~] **Step 3** Log agent (simulator, fallback, heartbeat, HTTPS, append-only verified; **real Windows collector NOT run — Linux build host**)
+- [x] **Step 4** FastAPI core (ingest, logs, heartbeats, agents, health, API-key + JWT auth, /ws/live)
 - [ ] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash linking)
 - [ ] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
 - [ ] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
@@ -454,3 +454,6 @@ Connection without a valid token is closed with code 1008 (policy violation).
 | Date | Step | Change |
 |---|---|---|
 | 2026-11-20 | 1 | Scaffold, venv (Python 3.12), pinned requirements, branches, contract. `websockets` pinned to 13.1 because `web3==7.6.1` requires `websockets<14`. |
+| 2026-11-20 | 2 | SQLite + Postgres schemas, restricted `log_writer` role (verified on local Postgres 16). |
+| 2026-11-20 | 3 | Agent + collector. Windows collector unverified (no Windows host). |
+| 2026-11-20 | 4 | API core. Fixed race in agent auto-registration (concurrent first heartbeat + event -> 500) with `ON CONFLICT DO NOTHING`; regression test added. Added `requirements.lock.txt`. Dashboard login = `admin` + API_KEY (demo simplification). |
