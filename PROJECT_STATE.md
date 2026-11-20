@@ -12,8 +12,8 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Quai rebuild — Step 4 (FastAPI core) complete |
-| Next step | Step 5 — Hash chain (re-verify) |
+| Current step | Quai rebuild — Step 5 (Hash chain) complete |
+| Next step | Step 6 — Tamper detection (re-verify) |
 | Python | 3.12 (venv at `.venv`) · Node.js LTS (quai-service, Hardhat, frontend) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
 | Build host | Linux cloud container (target platform: Windows 11 / PowerShell) |
@@ -25,7 +25,7 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 - [x] **Step 2** Database (schema.sql SQLite + Postgres/Supabase, 8 tables, restricted role)
 - [~] **Step 3** Log agent: simulator, fallback, 10 s heartbeat, HTTPS + API key, append-only re-verified. **Real Windows Event Log collector NOT run (no Windows host).**
 - [x] **Step 4** FastAPI core (ingest, logs, heartbeats, agents, health, API-key + JWT auth, /ws/live)
-- [ ] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash)
+- [x] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash)
 - [ ] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
 - [ ] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
 - [ ] **Step 8** Blockchain on Quai Orchard (Solidity 0.8.20 `anchorRoot`, Hardhat `cyprus1`, Node.js quais service `/anchor` `/status`, simulator; **no broadcast until operator replies "approve"**)
@@ -519,3 +519,4 @@ Response 200: `{ "batch_id": "...", "root": "<64 hex>", "timestamp": 1790000000 
 | 2026-11-20 | Q2 | Schema re-verified on SQLite + Postgres 16 (8 tables, unique seq_id, FKs, `log_writer` INSERT/SELECT only). Postgres column migration now tested. Quai anchors fit existing columns; DATABASE.md upgrade section. |
 | 2026-11-20 | Q3 | Agent unchanged since 07fb8c8; re-verified live (HTTPS to real API: 8 events, 0 errors; wrong key -> 401; http to remote refused; heartbeat 0/10/20 s). Windows collector still unverified. |
 | 2026-11-20 | Q4 | API core re-verified with real HTTPS requests (seq 1->2, 401, 422, logs, JWT 401, health shows truthful SIMULATED badge, wss live logs, agent online->delayed->offline + heartbeat_timeout incident/alert). Operator accepted Step 3 Windows-collector gap. |
+| 2026-11-20 | Q5 | Hash chain re-verified (NIST vectors, 5-log chain via API, genesis 0*64, independent hashlib recompute, /api/chain all valid). Hashing code unchanged since 077e982. |
