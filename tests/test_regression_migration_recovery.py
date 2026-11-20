@@ -1,0 +1,69 @@
+"""Regressions found while running the app on a database created by an older version."""
+import sqlite3
+
+from sqlalchemy import text
+
+from backend.app.factory import create_app
+from backend.database.db import apply_schema, make_engine
+from tests.conftest import make_settings
+
+
+def _old_schema_db(path):
+    """blockchain_anchors as created before onchain_batch_id existed."""
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE blockchain_anchors (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER NOT NULL UNIQUE,"
+              " root TEXT NOT NULL, mode TEXT NOT NULL, chain_id INTEGER NOT NULL, tx_hash TEXT NOT NULL,"
+              " block_number INTEGER NOT NULL, block_timestamp TEXT NOT NULL, contract_address TEXT,"
+              " explorer_url TEXT, created_at TEXT NOT NULL)")
+    c.commit()
+    c.close()
+
+
+def test_old_database_gets_missing_column(tmp_path):
+    _old_schema_db(tmp_path / "old.db")
+    eng = make_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    assert apply_schema(eng) == ["blockchain_anchors.onchain_batch_id"]
+    assert apply_schema(eng) == []  # idempotent
+    with eng.connect() as c:
+        cols = [r[1] for r in c.execute(text("PRAGMA table_info(blockchain_anchors)"))]
+    assert "onchain_batch_id" in cols
+
+
+def test_anchoring_works_on_upgraded_old_database(tmp_path):
+    from fastapi.testclient import TestClient
+    from tests.conftest import TEST_API_KEY, sample_event
+    _old_schema_db(tmp_path / "test.db")
+    with TestClient(create_app(make_settings(tmp_path), run_monitor=False)) as c:
+        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
+        for i in range(3):
+            c.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
+        b = c.post("/api/merkle/build", headers=h).json()
+        r = c.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=h)
+        assert r.status_code == 200, r.text
+        assert c.post("/api/proof/verify", json={"batch_id": 1}, headers=h).json()["result"] == "MATCH"
+
+
+def test_anchor_recovered_when_db_write_failed_after_chain_write(app, client, jwt_headers, ingest):
+    from backend.app.anchor_service import onchain_batch_id
+    from backend.database import repo
+    ingest(4)
+    b = client.post("/api/merkle/build", headers=jwt_headers).json()
+    with app.state.ctx.engine.connect() as c:
+        key = onchain_batch_id(repo.get_log(c, 1)["curr_hash"], b["batch_id"])
+    first = app.state.ctx.anchorer.anchor(b["root"], key)  # chain write succeeded, DB never recorded it
+    r = client.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=jwt_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["tx_hash"] == first["tx_hash"] and r.json()["block_number"] == first["block_number"]
+    assert client.post("/api/proof/verify", json={"batch_id": b["batch_id"]}, headers=jwt_headers).json()["result"] == "MATCH"
+
+
+def test_recovery_refuses_a_different_onchain_root(app, client, jwt_headers, ingest):
+    from backend.app.anchor_service import onchain_batch_id
+    from backend.database import repo
+    ingest(4)
+    b = client.post("/api/merkle/build", headers=jwt_headers).json()
+    with app.state.ctx.engine.connect() as c:
+        key = onchain_batch_id(repo.get_log(c, 1)["curr_hash"], b["batch_id"])
+    app.state.ctx.anchorer.anchor("ee" * 32, key)  # someone anchored a different root under this key
+    r = client.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=jwt_headers)
+    assert r.status_code == 409 and "does not match" in r.json()["detail"]
