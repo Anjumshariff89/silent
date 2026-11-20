@@ -7,21 +7,39 @@ import contextlib
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.config import Settings, load_settings
+from pathlib import Path
+
+from backend.app.config import DATA_DIR, Settings, load_settings
 from backend.app.context import AppContext
 from backend.app.monitor import monitor_loop
 from backend.database.db import apply_schema, make_engine
+from backend.blockchain.anchor import make_anchorer
 from backend.integrations.alerts import Alerter
 
 VERSION = "0.1.0"
 
 
-def create_app(settings: Settings | None = None, run_monitor: bool = True) -> FastAPI:
-    settings = settings or load_settings()
+def ledger_path(settings: Settings) -> Path:
+    """Simulated-chain ledger lives next to a SQLite DB file, else in data/."""
+    url = settings.database_url
+    if url.startswith("sqlite:///") and ":memory:" not in url:
+        db = Path(url[len("sqlite:///"):])
+        return db.with_name(db.stem + "_sim_chain.json")
+    return DATA_DIR / "sim_chain.json"
+
+
+def build_context(settings: Settings) -> AppContext:
     engine = make_engine(settings.database_url)
     apply_schema(engine)
-    ctx = AppContext(settings=settings, engine=engine,
-                     alerter=Alerter(settings.telegram_bot_token, settings.telegram_chat_id))
+    return AppContext(settings=settings, engine=engine,
+                      alerter=Alerter(settings.telegram_bot_token, settings.telegram_chat_id),
+                      anchorer=make_anchorer(settings, ledger_path(settings)))
+
+
+def create_app(settings: Settings | None = None, run_monitor: bool = True) -> FastAPI:
+    settings = settings or load_settings()
+    ctx = build_context(settings)
+    engine = ctx.engine
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):

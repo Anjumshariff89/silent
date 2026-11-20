@@ -11,8 +11,8 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Step 4 — FastAPI core (complete) |
-| Next step | Step 5 — Hash chain |
+| Current step | Step 8 — Blockchain (complete) |
+| Next step | Step 9 — Evidence reports |
 | Python | 3.12 (venv at `.venv`) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
 | Build host so far | Linux cloud container (target platform: Windows 11 / PowerShell) |
@@ -23,10 +23,10 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 - [x] **Step 2** Database (schema.sql for SQLite + Postgres/Supabase, 8 tables, restricted role)
 - [~] **Step 3** Log agent (simulator, fallback, heartbeat, HTTPS, append-only verified; **real Windows collector NOT run — Linux build host**)
 - [x] **Step 4** FastAPI core (ingest, logs, heartbeats, agents, health, API-key + JWT auth, /ws/live)
-- [ ] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash linking)
-- [ ] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
-- [ ] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
-- [ ] **Step 8** Blockchain (Solidity anchorRoot, Hardhat, web3.py real + simulator)
+- [x] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash linking)
+- [x] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
+- [x] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
+- [x] **Step 8** Blockchain (Solidity anchorRoot, Hardhat, web3.py real + simulator)
 - [ ] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer)
 - [ ] **Step 10** Frontend (Next.js + TS + Tailwind SOC dashboard, 12 pages)
 - [ ] **Step 11** End-to-end tests (6 scenarios)
@@ -311,7 +311,7 @@ Response 200:
   "created_at": "2026-11-20T14:32:00Z"
 }
 ```
-Leaves = `curr_hash` of each log (in seq order). Odd node at a level is paired with itself. Error 400 if no logs in range.
+Leaf = `SHA-256(0x00 || curr_hash_bytes)`, node = `SHA-256(0x01 || left || right)` (domain separation). Odd node at a level is paired with itself. Error 400 if no unbatched logs / empty range, 409 if the range overlaps an existing batch.
 
 ### `GET /api/merkle/{batch_id}` — auth: JWT
 
@@ -359,6 +359,7 @@ Response 200:
 ```json
 {
   "batch_id": 7,
+  "onchain_batch_id": "6256315520342587137...",
   "root": "c3d9...",
   "mode": "SIMULATED",
   "chain_id": 80002,
@@ -370,6 +371,7 @@ Response 200:
 }
 ```
 Errors: 404 (no batch), 409 (already anchored), 503 (RPC unavailable in REAL mode). In SIMULATED mode `explorer_url` is `null`.
+`onchain_batch_id` (decimal string of a uint256) is the key used in the contract: `(first 64 bits of genesis log curr_hash << 64) | batch_id`, so separate log databases never collide on one contract. Read it on-chain with `getAnchor(onchain_batch_id)`.
 
 ### `GET /api/blockchain/status` — auth: JWT
 
@@ -408,7 +410,7 @@ Response 200:
   "note": "MATCH means the logs in this batch hash to the root anchored at block 1234567. It does not prove the events themselves occurred."
 }
 ```
-`result` ∈ `MATCH` | `MISMATCH` | `NOT_ANCHORED`.
+`result` ∈ `MATCH` | `MISMATCH` | `NOT_ANCHORED`. Leaves are **recomputed from log content** (not copied from stored hashes), and the log count must equal `leaf_count`, so content edits, full chain rewrites and tail truncation all give MISMATCH. If the DB records an anchor but none exists on-chain under its key, the result is MISMATCH. The response also includes `stored_root`, `leaf_count`, `logs_found`, `problems[]`, `onchain_batch_id`, `mode`.
 
 ### `GET /api/evidence/{batch_id}/json` — auth: JWT
 
@@ -449,6 +451,17 @@ Connection without a valid token is closed with code 1008 (policy violation).
 
 ---
 
+## Additional endpoints (beyond the original contract)
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /api/auth/login` | none | Dashboard JWT |
+| `GET /api/chain?from_seq=&limit=` | JWT | Hash-chain links with `hash_valid` / `link_valid` (visualization) |
+| `POST /api/incidents/resolve?target=` | JWT | Acknowledge open incidents (status only; logs never change) |
+| `GET /api/merkle/batches` | JWT | List batches with anchor tx |
+| `POST /api/demo/tamper` `{seq_id, kind: modify\|delete\|reorder}` | JWT | Attack a **sandbox copy**, verify it, record sandbox incidents (`target="sandbox"`) |
+| `POST /api/demo/reset` | JWT | Resolve sandbox incidents, re-verify live chain |
+
 ## Change log
 
 | Date | Step | Change |
@@ -457,3 +470,7 @@ Connection without a valid token is closed with code 1008 (policy violation).
 | 2026-11-20 | 2 | SQLite + Postgres schemas, restricted `log_writer` role (verified on local Postgres 16). |
 | 2026-11-20 | 3 | Agent + collector. Windows collector unverified (no Windows host). |
 | 2026-11-20 | 4 | API core. Fixed race in agent auto-registration (concurrent first heartbeat + event -> 500) with `ON CONFLICT DO NOTHING`; regression test added. Added `requirements.lock.txt`. Dashboard login = `admin` + API_KEY (demo simplification). |
+| 2026-11-20 | 5 | Hash chain view endpoint; NIST vectors. |
+| 2026-11-20 | 6 | Verifier (modified/missing/reordered), incidents, alerts, sandbox-only tamper simulator + demo endpoints. |
+| 2026-11-20 | 7 | Merkle tree with 0x00/0x01 domain separation (contract updated). |
+| 2026-11-20 | 8 | LogAnchor.sol (write-once, owner-only), Hardhat tests, solcjs pinned (no compiler download). web3.py REAL path verified against a local Hardhat node; Amoy not reachable from build host. Fixed on-chain batch key collision across databases (namespaced `onchain_batch_id`). Schema: `blockchain_anchors.onchain_batch_id` added. |
