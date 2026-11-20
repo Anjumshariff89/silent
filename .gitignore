@@ -42,3 +42,4 @@ Thumbs.db
 *_sim_chain.json
 *.tmp
 .coverage
+!frontend/.env.local.example
