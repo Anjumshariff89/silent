@@ -1,0 +1,96 @@
+import { mockRequest } from "./mock";
+
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
+const TOKEN_KEY = "lace_token";
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string | null): void {
+  try {
+    if (token) window.localStorage.setItem(TOKEN_KEY, token);
+    else window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage unavailable: session-only login */
+  }
+}
+
+function detailOf(body: unknown, fallback: string): string {
+  if (body && typeof body === "object" && "detail" in body) {
+    const d = (body as { detail: unknown }).detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d)) return d.map((e) => (e as { msg?: string }).msg ?? "invalid").join("; ");
+  }
+  return fallback;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (USE_MOCK) return mockRequest<T>(path, init);
+  const headers = new Headers(init.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...init, headers, cache: "no-store" });
+  } catch {
+    throw new ApiError(0, `Cannot reach the API at ${API_URL}. Is the backend running?`);
+  }
+  if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/api/auth")) {
+    setToken(null);
+    if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
+  }
+  if (!res.ok) {
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON error */
+    }
+    throw new ApiError(res.status, detailOf(body, `HTTP ${res.status}`));
+  }
+  return (await res.json()) as T;
+}
+
+export const post = <T,>(path: string, body?: unknown) =>
+  api<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+
+/** Authenticated file download (JSON/PDF evidence). */
+export async function download(path: string, filename: string): Promise<void> {
+  if (USE_MOCK) {
+    const blob = new Blob([JSON.stringify(await mockRequest(path, {}), null, 2)], { type: "application/json" });
+    triggerDownload(blob, filename);
+    return;
+  }
+  const res = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+  if (!res.ok) throw new ApiError(res.status, `Download failed (HTTP ${res.status})`);
+  triggerDownload(await res.blob(), filename);
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function wsUrl(): string {
+  return `${API_URL.replace(/^http/, "ws")}/ws/live?token=${encodeURIComponent(getToken() ?? "")}`;
+}
