@@ -43,6 +43,7 @@ pycryptodome==3.24.1
 pydantic==2.10.4
 pydantic_core==2.27.2
 PyJWT==2.10.1
+pypdf==5.1.0
 pytest==8.3.4
 python-dotenv==1.0.1
 python-multipart==0.0.20

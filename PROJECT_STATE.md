@@ -11,8 +11,8 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Step 8 — Blockchain (complete) |
-| Next step | Step 9 — Evidence reports |
+| Current step | Step 9 — Evidence reports (complete) |
+| Next step | Step 10 — Frontend |
 | Python | 3.12 (venv at `.venv`) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
 | Build host so far | Linux cloud container (target platform: Windows 11 / PowerShell) |
@@ -27,7 +27,7 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 - [x] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
 - [x] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
 - [x] **Step 8** Blockchain (Solidity anchorRoot, Hardhat, web3.py real + simulator)
-- [ ] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer)
+- [x] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer)
 - [ ] **Step 10** Frontend (Next.js + TS + Tailwind SOC dashboard, 12 pages)
 - [ ] **Step 11** End-to-end tests (6 scenarios)
 - [ ] **Step 12** Docs and launch (start.ps1, README, OpenAPI, demo script)
@@ -474,3 +474,4 @@ Connection without a valid token is closed with code 1008 (policy violation).
 | 2026-11-20 | 6 | Verifier (modified/missing/reordered), incidents, alerts, sandbox-only tamper simulator + demo endpoints. |
 | 2026-11-20 | 7 | Merkle tree with 0x00/0x01 domain separation (contract updated). |
 | 2026-11-20 | 8 | LogAnchor.sol (write-once, owner-only), Hardhat tests, solcjs pinned (no compiler download). web3.py REAL path verified against a local Hardhat node; Amoy not reachable from build host. Fixed on-chain batch key collision across databases (namespaced `onchain_batch_id`). Schema: `blockchain_anchors.onchain_batch_id` added. |
+| 2026-11-20 | 9 | JSON evidence bundle (self-contained, with all proofs + on-chain key), PDF certificate with disclaimer, stdlib-only offline verifier. Added pypdf==5.1.0 (tests). |
