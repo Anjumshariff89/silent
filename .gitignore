@@ -45,3 +45,6 @@ Thumbs.db
 !frontend/.env.local.example
 frontend/tsconfig.tsbuildinfo
 *.tsbuildinfo
+*.db-wal
+*.db-shm
+*.db-journal

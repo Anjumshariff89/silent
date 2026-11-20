@@ -50,10 +50,31 @@ def _statements(sql: str) -> list[str]:
     return [s.strip() for s in "\n".join(lines).split(";") if s.strip()]
 
 
-def apply_schema(engine: Engine) -> None:
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS never alters an existing table,
+# so databases created by an older version get these via ALTER TABLE.
+MIGRATIONS = [
+    ("blockchain_anchors", "onchain_batch_id", "TEXT",
+     "CREATE UNIQUE INDEX IF NOT EXISTS ux_anchors_onchain_batch_id ON blockchain_anchors(onchain_batch_id)"),
+]
+
+
+def _columns(conn, table: str) -> set[str]:
+    from sqlalchemy import inspect
+    return {c["name"] for c in inspect(conn).get_columns(table)}
+
+
+def apply_schema(engine: Engine) -> list[str]:
+    """Create missing tables and add missing columns. Returns the migrations applied."""
+    applied = []
     with engine.begin() as conn:
         for stmt in _statements(schema_sql(engine)):
             conn.execute(text(stmt))
+        for table, column, ddl_type, index_sql in MIGRATIONS:
+            if column not in _columns(conn, table):
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))  # fixed literals
+                conn.execute(text(index_sql))
+                applied.append(f"{table}.{column}")
+    return applied
 
 
 def list_tables(engine: Engine) -> list[str]:

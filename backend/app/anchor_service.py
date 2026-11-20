@@ -52,7 +52,14 @@ def anchor_batch(c: AppContext, batch_id: int) -> dict:
     try:
         res = c.anchorer.anchor(b["root"], key)
     except AlreadyAnchored as exc:
-        raise ServiceError(409, str(exc))
+        # The chain already holds this key but the DB has no record: the previous attempt anchored and then
+        # failed before saving. Recover the tx if the on-chain root is exactly this batch's root.
+        try:
+            res = c.anchorer.find_anchor_tx(key)
+        except AnchorError:
+            res = None
+        if not res or res["root"] != b["root"]:
+            raise ServiceError(409, f"{exc}; on-chain root does not match this batch, refusing to record it")
     except AnchorError as exc:
         raise ServiceError(503, str(exc))
     row = {"batch_id": batch_id, "onchain_batch_id": str(key), "root": b["root"], "mode": c.anchorer.mode, "chain_id": c.anchorer.chain_id,

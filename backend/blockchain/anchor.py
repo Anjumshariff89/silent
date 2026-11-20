@@ -85,6 +85,14 @@ class SimulatedChain:
             self._save(data)
         return {"tx_hash": tx_hash, "block_number": number, "block_timestamp": _iso(ts)}
 
+    def find_anchor_tx(self, batch_id: int) -> dict | None:
+        """Recover tx details of an existing anchor (used if the DB write after anchoring failed)."""
+        for b in self._load()["blocks"]:
+            if b["batch_id"] == batch_id:
+                return {"root": b["root"], "tx_hash": b["tx_hash"], "block_number": b["number"],
+                        "block_timestamp": _iso(b["timestamp"])}
+        return None
+
     def get_anchor(self, batch_id: int) -> dict | None:
         for b in self._load()["blocks"]:
             if b["batch_id"] == batch_id:
@@ -161,6 +169,29 @@ class Web3Anchorer:
         h = receipt["transactionHash"].hex()
         return {"tx_hash": h if h.startswith("0x") else "0x" + h, "block_number": receipt["blockNumber"],
                 "block_timestamp": _iso(block["timestamp"])}
+
+    def find_anchor_tx(self, batch_id: int, window: int = 10_000, max_windows: int = 50) -> dict | None:
+        """Search RootAnchored events (newest first, in RPC-friendly block windows) for this batch key."""
+        self._check_chain()
+        latest = self.w3.eth.block_number
+        end = latest
+        for _ in range(max_windows):
+            start = max(0, end - window + 1)
+            try:
+                logs = self.contract.events.RootAnchored.get_logs(from_block=start, to_block=end,
+                                                                 argument_filters={"batchId": batch_id})
+            except Exception:
+                return None
+            if logs:
+                ev = logs[-1]
+                h = ev["transactionHash"].hex()
+                return {"root": ev["args"]["root"].hex().removeprefix("0x"),
+                        "tx_hash": h if h.startswith("0x") else "0x" + h, "block_number": ev["blockNumber"],
+                        "block_timestamp": _iso(ev["args"]["timestamp"])}
+            if start == 0:
+                break
+            end = start - 1
+        return None
 
     def get_anchor(self, batch_id: int) -> dict | None:
         self._check_chain()
