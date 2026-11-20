@@ -11,11 +11,11 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Step 11 — End-to-end tests (complete) |
-| Next step | Step 12 — Docs and launch |
+| Current step | Step 12 — Docs and launch (complete). All steps done. |
+| Next step | Run REAL mode on Windows with your keys (see README) |
 | Python | 3.12 (venv at `.venv`) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
-| Build host so far | Linux cloud container (target platform: Windows 11 / PowerShell) |
+| Build host | Linux cloud container (target platform: Windows 11 / PowerShell). start.ps1 not executed here; start.sh (same steps) verified from a clean clone. |
 
 ## Phase checklist
 
@@ -30,7 +30,7 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 - [x] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer)
 - [x] **Step 10** Frontend (Next.js + TS + Tailwind SOC dashboard, 12 pages)
 - [x] **Step 11** End-to-end tests (6 scenarios)
-- [ ] **Step 12** Docs and launch (start.ps1, README, OpenAPI, demo script)
+- [x] **Step 12** Docs and launch (start.ps1, README, OpenAPI, demo script)
 
 ## Git branches
 
@@ -477,3 +477,4 @@ Connection without a valid token is closed with code 1008 (policy violation).
 | 2026-11-20 | 9 | JSON evidence bundle (self-contained, with all proofs + on-chain key), PDF certificate with disclaimer, stdlib-only offline verifier. Added pypdf==5.1.0 (tests). |
 | 2026-11-20 | 10 | Next.js 14.2.35 dashboard (10 pages + login), mock mode, live WebSocket, tamper demo. Screenshots in documentation/screenshots. |
 | 2026-11-20 | 11 | 6-scenario E2E test; route-coverage check found 2 untested routes (fixed); config unit tests added; coverage 88%. Added coverage==7.6.9. |
+| 2026-11-20 | 12 | start.ps1 + start.sh, README per-key setup, OpenAPI export, ARCHITECTURE/API/DEMO docs. Clean-clone launch verified with start.sh; fixed 3 launcher bugs (stdout held open / wrong PID, port collision false positive, restart race). 6 scenarios passed through the dashboard. |
