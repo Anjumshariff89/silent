@@ -6,6 +6,7 @@ import { post } from "@/lib/api";
 import { useApi, useLive } from "@/lib/hooks";
 import type { Agent, BlockchainStatus, IntegrityStatus, Page, SecurityLog, VerifyResult } from "@/lib/types";
 import { Card, ErrorState, fmtTime, Hash, Loading, Pill, Stat } from "@/components/ui";
+import { blockchainBadgeLabel, chainName } from "@/lib/quai";
 
 export default function OverviewPage() {
   const live = useLive();
@@ -58,8 +59,8 @@ export default function OverviewPage() {
         <Card title="Blockchain anchoring">
           {chain.loading && !chain.data ? <Loading /> : chain.data && (
             <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-soc-muted">Mode</dt><dd><Pill value={chain.data.mode} /></dd></div>
-              <div className="flex justify-between"><dt className="text-soc-muted">Chain ID</dt><dd>{chain.data.chain_id}</dd></div>
+              <div className="flex justify-between"><dt className="text-soc-muted">Mode</dt><dd><Pill value={chain.data.mode} label={blockchainBadgeLabel(chain.data.mode, chain.data.chain_id)} /></dd></div>
+              <div className="flex justify-between"><dt className="text-soc-muted">Network</dt><dd>{chainName(chain.data.chain_id)}</dd></div>
               <div className="flex justify-between"><dt className="text-soc-muted">Connected</dt><dd><Pill value={chain.data.connected ? "online" : "offline"} label={chain.data.connected ? "yes" : "no"} /></dd></div>
               <div className="flex justify-between"><dt className="text-soc-muted">Last anchor tx</dt><dd><Hash value={chain.data.last_anchor?.tx_hash} /></dd></div>
               <p className="pt-2 text-xs text-soc-muted">Anchoring proves a batch root is unchanged since anchoring. It does not prove events happened.</p>

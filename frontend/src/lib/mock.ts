@@ -110,7 +110,7 @@ export async function mockRequest<T>(path: string, init: RequestInit): Promise<T
   const pr = p.match(/^\/api\/merkle\/(\d+)\/proof\/(\d+)$/);
   if (pr) return out({ batch_id: Number(pr[1]), seq_id: Number(pr[2]), leaf: h(9), leaf_index: 0,
     proof: [{ position: "right", hash: h(10) }, { position: "left", hash: h(11) }], root: h(100) });
-  if (p === "/api/blockchain/status") return out({ mode: "SIMULATED", chain_id: 80002, connected: true, contract_address: null,
+  if (p === "/api/blockchain/status") return out({ mode: "SIMULATED", chain_id: 15000, connected: true, contract_address: null,
     anchor_wallet: null, latest_block: 1000002, anchored_batches: 2,
     last_anchor: { batch_id: 2, tx_hash: "0x" + h(201), block_number: 1000002, explorer_url: null } } satisfies BlockchainStatus);
   if (p === "/api/proof/verify") return out({ batch_id: 1, result: tampered ? "MISMATCH" : "MATCH", local_root: h(100),
