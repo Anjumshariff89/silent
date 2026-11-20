@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Logs the Attacker Can't Erase",
-    "description": "Tamper-evident security logging. Anchoring proves a commitment is unchanged since anchoring; it does not prove that an event happened.",
+    "description": "Tamper-evident security logging. Anchoring proves a commitment is unchanged since anchoring; it does not prove that an event happened. Anchoring: Quai Orchard Cyprus-1 (chain 15000) via the local quai-service.",
     "version": "0.1.0"
   },
   "paths": {
