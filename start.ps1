@@ -64,6 +64,8 @@ if (Test-Path $PidFile) { Write-Step "Previous run found, stopping it first"; St
 # ---------------------------------------------------------------- prerequisites
 Write-Step "Checking prerequisites"
 foreach ($port in @($ApiPort, $WebPort)) {
+    # allow up to 10 s for a just-stopped previous run to release the port
+    for ($i = 0; $i -lt 10 -and (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 1 }
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
         throw "Port $port is already in use by another process. Stop it first (.\start.ps1 -Stop)."
     }
