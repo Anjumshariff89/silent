@@ -1,0 +1,41 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# --- Local databases / runtime data ---
+*.db
+*.sqlite
+*.sqlite3
+data/
+evidence_out/
+
+# --- Node / Next.js / Hardhat ---
+node_modules/
+.next/
+out/
+frontend/.env.local
+smart-contracts/artifacts/
+smart-contracts/cache/
+smart-contracts/typechain-types/
+smart-contracts/deployments/localhost/
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
