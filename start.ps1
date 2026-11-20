@@ -63,6 +63,11 @@ if (Test-Path $PidFile) { Write-Step "Previous run found, stopping it first"; St
 
 # ---------------------------------------------------------------- prerequisites
 Write-Step "Checking prerequisites"
+foreach ($port in @($ApiPort, $WebPort)) {
+    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+        throw "Port $port is already in use by another process. Stop it first (.\start.ps1 -Stop)."
+    }
+}
 & py -3.12 --version 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Python 3.12 not found. Install it from python.org (tick 'py launcher')." }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw "Node.js not found. Install Node.js 20 LTS or newer." }

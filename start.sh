@@ -34,6 +34,11 @@ wait_http() { for _ in $(seq 1 "$2"); do curl -fsS -o /dev/null "$1" 2>/dev/null
 [ -f "$PIDS" ] && { echo "==> previous run found, stopping it"; stop_all; }
 
 echo "==> Checking prerequisites"
+for port in "$API_PORT" "$WEB_PORT"; do
+  if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$port/"; then
+    echo "Port $port is already in use by another process. Stop it first (./start.sh --stop)."; exit 1
+  fi
+done
 command -v python3.12 >/dev/null || { echo "Python 3.12 not found"; exit 1; }
 command -v node >/dev/null || { echo "Node.js not found"; exit 1; }
 
