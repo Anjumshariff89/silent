@@ -43,3 +43,5 @@ Thumbs.db
 *.tmp
 .coverage
 !frontend/.env.local.example
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo

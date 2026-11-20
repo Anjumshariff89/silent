@@ -10,12 +10,16 @@ API_PORT="${API_PORT:-8000}"; WEB_PORT="${WEB_PORT:-3000}"
 PY="$ROOT/.venv/bin/python"
 mkdir -p "$LOGS"
 
+kill_tree() {  # kill a process and all its descendants (npm -> sh -> next-server)
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$child"; done
+  kill "$1" 2>/dev/null || true
+}
 stop_all() {
   if [ -f "$PIDS" ]; then
     while read -r name pid; do
       if kill -0 "$pid" 2>/dev/null; then
-        pkill -TERM -P "$pid" 2>/dev/null || true   # children (npx -> next-server)
-        kill "$pid" 2>/dev/null || true
+        kill_tree "$pid"
         echo "stopped $name (pid $pid)"
       fi
     done < "$PIDS"
@@ -48,21 +52,23 @@ fi
 
 : > "$PIDS"
 echo "==> Starting backend on http://127.0.0.1:$API_PORT"
-nohup "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port "$API_PORT" > "$LOGS/backend.log" 2>&1 &
+nohup "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port "$API_PORT" < /dev/null > "$LOGS/backend.log" 2>&1 &
 echo "backend $!" >> "$PIDS"
 wait_http "http://127.0.0.1:$API_PORT/api/health" 60 || { echo "backend not healthy; see $LOGS/backend.log"; exit 1; }
 
 echo "==> Starting log agent"
-nohup "$PY" -m backend.agent.agent --server "http://127.0.0.1:$API_PORT" --collector auto > "$LOGS/agent.log" 2>&1 &
+nohup "$PY" -m backend.agent.agent --server "http://127.0.0.1:$API_PORT" --collector auto < /dev/null > "$LOGS/agent.log" 2>&1 &
 echo "agent $!" >> "$PIDS"
 
 if [ "${1:-}" = "--verifier" ]; then
-  nohup "$PY" -m backend.verifier_service --interval 60 > "$LOGS/verifier.log" 2>&1 &
+  nohup "$PY" -m backend.verifier_service --interval 60 < /dev/null > "$LOGS/verifier.log" 2>&1 &
   echo "verifier $!" >> "$PIDS"
 fi
 
 echo "==> Starting dashboard on http://127.0.0.1:$WEB_PORT"
-( cd frontend && NEXT_TELEMETRY_DISABLED=1 nohup npx next start -p "$WEB_PORT" > "$LOGS/frontend.log" 2>&1 & echo "frontend $!" >> "$PIDS" )
+# backgrounded subshell + exec: $! is the real npx PID and no process keeps this script's stdout open
+( cd frontend && NEXT_TELEMETRY_DISABLED=1 exec nohup npx next start -p "$WEB_PORT" < /dev/null > "$LOGS/frontend.log" 2>&1 ) &
+echo "frontend $!" >> "$PIDS"
 wait_http "http://127.0.0.1:$WEB_PORT/login" 60 || { echo "dashboard did not start; see $LOGS/frontend.log"; exit 1; }
 
 echo
