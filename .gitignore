@@ -41,3 +41,4 @@ Thumbs.db
 *.log
 *_sim_chain.json
 *.tmp
+.coverage
