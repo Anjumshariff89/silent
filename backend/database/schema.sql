@@ -64,6 +64,7 @@ CREATE INDEX IF NOT EXISTS ix_heartbeats_agent_time ON heartbeats(agent_id, rece
 CREATE TABLE IF NOT EXISTS blockchain_anchors (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     batch_id         INTEGER NOT NULL UNIQUE REFERENCES merkle_batches(batch_id),
+    onchain_batch_id TEXT NOT NULL UNIQUE,  -- uint256 key used in the contract (decimal string)
     root             TEXT NOT NULL CHECK (length(root) = 64),
     mode             TEXT NOT NULL CHECK (mode IN ('REAL','SIMULATED')),
     chain_id         INTEGER NOT NULL,

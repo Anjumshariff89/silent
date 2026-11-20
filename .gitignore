@@ -39,3 +39,5 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+*_sim_chain.json
+*.tmp
