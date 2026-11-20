@@ -12,8 +12,8 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Quai rebuild — Step 2 (Database) complete |
-| Next step | Step 3 — Log agent (re-verify) |
+| Current step | Quai rebuild — Step 3 (Log agent) re-verified except the real Windows collector |
+| Next step | Operator decision on the Windows collector check, then Step 4 |
 | Python | 3.12 (venv at `.venv`) · Node.js LTS (quai-service, Hardhat, frontend) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
 | Build host | Linux cloud container (target platform: Windows 11 / PowerShell) |
@@ -23,7 +23,7 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 - [x] **Step 1** Setup and contract: Quai `.env.example` (10 keys), `backend/blockchain/quai-service/`, 4 branches, this contract
 - [x] **Step 2** Database (schema.sql SQLite + Postgres/Supabase, 8 tables, restricted role)
-- [ ] **Step 3** Log agent (Windows Event Log 4624/4634/4672/4673 via pywin32, simulator fallback, heartbeat 10 s)
+- [~] **Step 3** Log agent: simulator, fallback, 10 s heartbeat, HTTPS + API key, append-only re-verified. **Real Windows Event Log collector NOT run (no Windows host).**
 - [ ] **Step 4** FastAPI core (ingest, logs, heartbeats, agents, health, API-key + JWT auth, /ws/live)
 - [ ] **Step 5** Hash chain (SHA-256 prev_hash/curr_hash)
 - [ ] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
@@ -517,3 +517,4 @@ Response 200: `{ "batch_id": "...", "root": "<64 hex>", "timestamp": 1790000000 
 | 2026-11-20 | 12 | start.ps1 + start.sh, README per-key setup, OpenAPI export, ARCHITECTURE/API/DEMO docs. Clean-clone launch verified with start.sh; fixed 3 launcher bugs (stdout held open / wrong PID, port collision false positive, restart race). 6 scenarios passed through the dashboard. |
 | 2026-11-20 | Q1 | Quai rebuild started from `main` (+ migration fix). `.env.example` = 10 Quai keys; config reads `RPC_URL`/`CYPRUS1_PK`/`CHAIN_ID=15000`/`CONTRACT_ADDRESS`; Quai keys never reach web3.py (simulator until quai-service in Step 8); `/api/health` blockchain badge now reflects the anchorer actually in use. `backend/blockchain/quai-service/` created. |
 | 2026-11-20 | Q2 | Schema re-verified on SQLite + Postgres 16 (8 tables, unique seq_id, FKs, `log_writer` INSERT/SELECT only). Postgres column migration now tested. Quai anchors fit existing columns; DATABASE.md upgrade section. |
+| 2026-11-20 | Q3 | Agent unchanged since 07fb8c8; re-verified live (HTTPS to real API: 8 events, 0 errors; wrong key -> 401; http to remote refused; heartbeat 0/10/20 s). Windows collector still unverified. |
