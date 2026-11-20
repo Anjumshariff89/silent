@@ -36,3 +36,18 @@ Indexes cover agent, event_id, event_time, batch, heartbeat (agent,time), incide
 `log_writer` can `INSERT` and `SELECT` on `security_logs`. `UPDATE`, `DELETE`, `TRUNCATE` and any access to
 other tables give `permission denied`. Note: the backend itself also writes `hash_chain`, heartbeats, etc., so
 the backend connects with a fuller role. `log_writer` is meant for a minimal ingest path or for auditors.
+
+## Upgrading an existing database
+
+`CREATE TABLE IF NOT EXISTS` never changes a table that already exists, so columns added in later versions
+are applied by `apply_schema()` at backend start (`MIGRATIONS` in `backend/database/db.py`). Currently:
+`blockchain_anchors.onchain_batch_id` (+ unique index). It is idempotent and verified on SQLite and Postgres 16.
+For Supabase you can also run it by hand in the SQL Editor:
+
+```sql
+ALTER TABLE blockchain_anchors ADD COLUMN IF NOT EXISTS onchain_batch_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_anchors_onchain_batch_id ON blockchain_anchors(onchain_batch_id);
+```
+
+Quai anchors fit the existing columns: `chain_id` = 15000, `tx_hash` and the zone-specific
+`contract_address` are stored as `TEXT`, and `explorer_url` points to `https://orchard.quaiscan.io`.
