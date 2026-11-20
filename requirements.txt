@@ -1,0 +1,23 @@
+# Pinned for Python 3.12. Install: pip install -r requirements.txt
+# --- API ---
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+python-multipart==0.0.20
+websockets==13.1  # web3 7.6.1 requires websockets<14
+# --- Config / auth ---
+python-dotenv==1.0.1
+PyJWT==2.10.1
+# --- Database (SQLite built-in; Postgres/Supabase via psycopg2) ---
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+# --- HTTP (agent -> API, Telegram) ---
+httpx==0.28.1
+# --- Blockchain (Polygon Amoy) ---
+web3==7.6.1
+# --- Evidence PDF ---
+reportlab==4.2.5
+# --- Windows Event Log (only installed on Windows; simulator fallback elsewhere) ---
+pywin32==308; sys_platform == "win32"
+# --- Tests ---
+pytest==8.3.4
