@@ -67,3 +67,32 @@ def test_pdf_opens_and_contains_disclaimer(client, jwt_headers, anchored):
 def test_evidence_404_for_unknown_batch(client, jwt_headers):
     assert client.get("/api/evidence/42/json", headers=jwt_headers).status_code == 404
     assert client.get("/api/evidence/42/pdf", headers=jwt_headers).status_code == 404
+
+
+def test_real_mode_bundle_has_quai_network_and_orchard_explorer(tmp_path):
+    """Bundle built from a REAL (quai-service) anchor: Quai network name, Orchard QuaiScan link, offline-verifiable."""
+    from fastapi.testclient import TestClient
+    from backend.app.factory import create_app
+    from backend.blockchain.anchor import QuaiServiceAnchorer
+    from tests.conftest import TEST_API_KEY, make_settings, sample_event
+    from tests.test_step8_blockchain import _emulated_service
+    s = make_settings(tmp_path, rpc_url="https://orchard.rpc.quai.network/cyprus1", cyprus1_pk="0x" + "1" * 64,
+                      contract_address="0x00aa" + "0" * 36)
+    app = create_app(s, run_monitor=False)
+    app.state.ctx.anchorer = QuaiServiceAnchorer(s.contract_address, transport=_emulated_service({"anchored": {}}))
+    with TestClient(app) as c:
+        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
+        for i in range(4):
+            c.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
+        b = c.post("/api/merkle/build", headers=h).json()
+        assert c.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=h).status_code == 200
+        bundle = json.loads(c.get(f"/api/evidence/{b['batch_id']}/json", headers=h).text)
+        pdf = c.get(f"/api/evidence/{b['batch_id']}/pdf", headers=h).content
+    a = bundle["anchor"]
+    assert a["mode"] == "REAL" and a["chain_id"] == 15000 and a["network"] == "Quai Orchard Cyprus-1 (testnet)"
+    assert a["explorer_url"].startswith("https://orchard.quaiscan.io/tx/0x")
+    assert a["contract_explorer_url"] == "https://orchard.quaiscan.io/address/0x00aa" + "0" * 36
+    assert "PolygonScan" not in json.dumps(bundle) and "source not verified" in a["explorer_status"]
+    assert bundle["verification"]["result"] == "MATCH" and verify_bundle(bundle)["valid"]
+    text = " ".join(" ".join((p.extract_text() or "").split()) for p in PdfReader(io.BytesIO(pdf)).pages)
+    assert "Quai Orchard Cyprus-1" in text and "orchard.quaiscan.io" in text

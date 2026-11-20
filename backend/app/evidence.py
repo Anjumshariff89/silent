@@ -17,6 +17,7 @@ SCHEMA_VERSION = "1.0"
 DISCLAIMER = ("Blockchain anchoring proves only that this Merkle root has not changed since it was anchored. "
               "It does not prove that the logged events occurred, that the log source was honest, or that logs "
               "were accurate or complete before anchoring.")
+NETWORK_NAMES = {15000: "Quai Orchard Cyprus-1 (testnet)", 9: "Quai Mainnet Cyprus-1"}
 REQUIRED_FIELDS = ("schema_version", "generated_at", "batch", "logs", "hash_algorithm", "canonicalization",
                    "merkle", "proofs", "anchor", "verification", "disclaimer")
 
@@ -48,14 +49,20 @@ def build_bundle(c: AppContext, batch_id: int) -> dict:
                    "odd_node": "paired with itself"},
         "proofs": {str(r["seq_id"]): inclusion_proof(levels, i) for i, r in enumerate(rows)},
         "anchor": None if not anchor else {
+            "network": NETWORK_NAMES.get(anchor["chain_id"], f"chain {anchor['chain_id']}"),
             "mode": anchor["mode"], "chain_id": anchor["chain_id"], "contract_address": anchor["contract_address"],
             "contract_explorer_url": explorer_address_url(anchor["chain_id"], anchor["contract_address"]),
             "onchain_batch_id": anchor["onchain_batch_id"], "anchored_root": anchor["root"],
             "tx_hash": anchor["tx_hash"], "block_number": anchor["block_number"],
             "block_timestamp": anchor["block_timestamp"], "explorer_url": anchor["explorer_url"],
-            "how_to_check_onchain": "Call getAnchor(onchain_batch_id) on the contract (e.g. PolygonScan 'Read "
-                                    "Contract') and compare the returned root with merkle_root." if anchor["mode"] == "REAL"
-                                    else "SIMULATED anchor: not on a public blockchain."},
+            "how_to_check_onchain": (
+                "Open explorer_url on Orchard QuaiScan to see the anchoring transaction and its RootAnchored event "
+                "(batchId = onchain_batch_id, root = anchored_root). Or call getAnchor(onchain_batch_id) on the "
+                "contract with any quais/JSON-RPC client and compare the returned root with merkle_root. "
+                "Contract source is not verified on QuaiScan (metadata is not published to IPFS)."
+                if anchor["mode"] == "REAL" else "SIMULATED anchor: not on a public blockchain; nothing to check on-chain."),
+            "explorer_status": ("transaction and event visible on Orchard QuaiScan; contract source not verified"
+                                if anchor["mode"] == "REAL" else "not applicable (simulated)")},
         "verification": {k: verification.get(k) for k in ("result", "local_root", "anchored_root", "logs_found",
                                                          "problems", "verified_at")},
         "disclaimer": DISCLAIMER,
@@ -93,10 +100,12 @@ def render_pdf(bundle: dict) -> bytes:
         ["Batch ID", P(b["batch_id"])], ["Sequence range", P(f"{b['from_seq']} - {b['to_seq']} ({b['leaf_count']} logs)")],
         ["Merkle root", P(b["merkle_root"], mono)], ["Root recomputed now", P(v["local_root"], mono)],
         ["Anchored root", P(v["anchored_root"], mono)], ["Anchor mode", P(a.get("mode", "NOT ANCHORED"))],
-        ["Chain ID", P(a.get("chain_id"))], ["Contract", P(a.get("contract_address"), mono)],
+        ["Network", P(a.get("network", "-"))], ["Chain ID", P(a.get("chain_id"))],
+        ["Contract", P(a.get("contract_address"), mono)],
         ["On-chain batch key", P(a.get("onchain_batch_id"), mono)], ["Transaction", P(a.get("tx_hash"), mono)],
         ["Block / time", P(f"{a.get('block_number', '-')} / {a.get('block_timestamp', '-')}")],
-        ["Explorer", P(a.get("explorer_url") or "n/a (simulated or local chain)", mono)],
+        ["Explorer", P(a.get("explorer_url") or "n/a (simulated anchor)", mono)],
+        ["Explorer status", P(a.get("explorer_status", "-"))],
         ["Verified at", P(v.get("verified_at"))], ["Generated at", P(bundle["generated_at"])],
     ]
     if v.get("problems"):

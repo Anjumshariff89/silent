@@ -12,8 +12,8 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 
 | Field | Value |
 |---|---|
-| Current step | Quai rebuild — Step 8 simulator mode complete; REAL mode waits for operator keys + "approve" |
-| Next step | Operator: set RPC_URL/CYPRUS1_PK in .env, review the dry-run plan, reply "approve" (or continue with Step 9) |
+| Current step | Quai rebuild — Step 9 (Evidence reports) complete; Step 8 REAL mode still waits for keys + "approve" |
+| Next step | Step 10 — Frontend (Quai labels, Orchard QuaiScan links, "Quai Orchard (REAL)" badge) |
 | Python | 3.12 (venv at `.venv`) · Node.js LTS (quai-service, Hardhat, frontend) |
 | Default mode | `MODE=simulator` (every integration falls back to a simulator when its key is empty) |
 | Build host | Linux cloud container (target platform: Windows 11 / PowerShell) |
@@ -29,7 +29,7 @@ Tamper-evident security logging: SHA-256 hash chains, Merkle trees, and blockcha
 - [x] **Step 6** Tamper detection (modified/missing/reordered, incidents, Telegram/console alert)
 - [x] **Step 7** Merkle tree (root, inclusion proofs, merkle_batches)
 - [~] **Step 8** Blockchain on Quai Orchard — simulator PASS; REAL deploy/anchor not yet run — (Solidity 0.8.20 `anchorRoot`, Hardhat `cyprus1`, Node.js quais service `/anchor` `/status`, simulator; **no broadcast until operator replies "approve"**)
-- [ ] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer, Orchard QuaiScan links)
+- [x] **Step 9** Evidence reports (JSON bundle + PDF certificate with disclaimer, Orchard QuaiScan links)
 - [ ] **Step 10** Frontend (SOC dashboard, "Quai Orchard (REAL)" / "SIMULATED" badges)
 - [ ] **Step 11** End-to-end tests (6 scenarios)
 - [ ] **Step 12** Docs and launch (start.ps1 launches backend, agent, quai-service, frontend; deployment evidence table)
@@ -534,3 +534,4 @@ quais-only signing, offline metadata CID instead of IPFS, RPC pathing, Prime vs 
 | 2026-11-20 | Q6 | Tamper detection re-verified live: clean PASS; modify@4, delete@6 (gap 5->7), reorder@8/9 detected on sandbox copies; 5 incidents + console alerts; original fingerprint unchanged. Code unchanged since 14deca7. |
 | 2026-11-20 | Q7 | Merkle tree re-verified (hand-computed 4- and 3-leaf roots, odd counts 1/3/5, one-byte leaf/sibling change fails, endpoints + merkle_batches storage). Code unchanged since f3ff95e. |
 | 2026-11-20 | Q8 | Quai Step 8 (simulator): LogAnchor 0.8.20/london (0 PUSH0), Hardhat cyprus1 config, quais deploy script (dry run default, --broadcast flag, zone + chain guards, offline metadata CID), Node quai-service (/status, /anchor, /anchor/:id[/tx], broadcast gate), Python QuaiServiceAnchorer, web3.py removed (lock 66 -> 36 packages), Orchard QuaiScan links. Live read-only checks against the real Orchard RPC. Network allowlist environment `silent` created (docs.qu.ai, orchard.rpc.quai.network, orchard.quaiscan.io). |
+| 2026-11-20 | Q9 | Evidence bundle/PDF: Quai network name, Orchard QuaiScan tx + contract links, explorer_status (source not verified, no IPFS), Quai on-chain check instructions; PolygonScan wording removed. Re-verified live (downloads, fields, standalone offline verify VALID/INVALID, PDF disclaimer). |
