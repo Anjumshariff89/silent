@@ -56,12 +56,12 @@ export function Pill({ value, label }: { value: string; label?: ReactNode }) {
   );
 }
 
-export function ModeBadge({ name, mode }: { name: string; mode: "REAL" | "SIMULATED" }) {
+export function ModeBadge({ name, mode, label }: { name: string; mode: "REAL" | "SIMULATED"; label?: string }) {
   return (
-    <span title={`${name}: ${mode}`} data-testid={`badge-${name}`}
+    <span title={`${name}: ${label ?? mode}`} data-testid={`badge-${name}`} data-mode={mode}
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ring-inset ${
         mode === "REAL" ? PILL.green : PILL.yellow}`}>
-      <span className="font-normal opacity-80">{name}</span> {mode}
+      <span className="font-normal opacity-80">{name}</span> {label ?? mode}
     </span>
   );
 }

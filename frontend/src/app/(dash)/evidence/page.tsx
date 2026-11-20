@@ -60,7 +60,10 @@ export default function EvidencePage() {
             <div className="space-y-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">Verification: <Pill value={bundle.verification.result} />
                 Anchor: {bundle.anchor ? <Pill value={bundle.anchor.mode} /> : <Pill value="NOT_ANCHORED" label="not anchored" />}
-                <span className="text-soc-muted">{bundle.logs.length} logs</span></div>
+                <span className="text-soc-muted">{bundle.logs.length} logs</span>
+                {bundle.anchor?.explorer_url && (
+                  <a data-testid="evidence-explorer" className="text-sky-400 underline" href={bundle.anchor.explorer_url} target="_blank" rel="noreferrer">
+                    View on Orchard QuaiScan ↗</a>)}</div>
               <p className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">{bundle.disclaimer}</p>
               <pre className="max-h-96 overflow-auto rounded bg-black/40 p-3 font-mono text-[11px] text-slate-300">{JSON.stringify(bundle, null, 2).slice(0, 6000)}</pre>
             </div>

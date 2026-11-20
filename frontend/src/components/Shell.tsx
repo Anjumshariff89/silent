@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { getToken, setToken, USE_MOCK } from "@/lib/api";
 import { useApi, useLive } from "@/lib/hooks";
 import type { Health, IntegrityStatus } from "@/lib/types";
+import { blockchainBadgeLabel } from "@/lib/quai";
 import { ModeBadge, StatusDot } from "./ui";
 
 export const NAV = [
@@ -73,7 +74,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {health.data && Object.entries(health.data.integrations).map(([k, v]) => (
-              <ModeBadge key={k} name={k.replace("windows_event_log", "winlog")} mode={v} />
+              <ModeBadge key={k} name={k.replace("windows_event_log", "winlog")} mode={v}
+                label={k === "blockchain" ? blockchainBadgeLabel(v) : undefined} />
             ))}
             {USE_MOCK && <span className="rounded bg-fuchsia-500/20 px-1.5 py-0.5 text-[10px] font-bold text-fuchsia-300">MOCK DATA</span>}
           </div>
