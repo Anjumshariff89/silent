@@ -107,3 +107,31 @@ def test_every_api_route_is_exercised_by_a_test(app):
         if prefix not in tests_text:
             missing.append(path)
     assert not missing, f"routes never called in tests: {missing}"
+
+
+def test_scenario5_through_quai_service_path(tmp_path):
+    """Scenario 5 again, but anchored through QuaiServiceAnchorer (the Quai Orchard code path) instead of the simulator."""
+    from fastapi.testclient import TestClient
+    from backend.app.factory import create_app
+    from backend.blockchain.anchor import QuaiServiceAnchorer
+    from tests.conftest import TEST_API_KEY, make_settings
+    from tests.test_step8_blockchain import _emulated_service
+    s = make_settings(tmp_path, rpc_url="https://orchard.rpc.quai.network/cyprus1", cyprus1_pk="0x" + "1" * 64,
+                      contract_address="0x00aa" + "0" * 36)
+    app = create_app(s, run_monitor=False)
+    app.state.ctx.anchorer = QuaiServiceAnchorer(s.contract_address, transport=_emulated_service({"anchored": {}}))
+    with TestClient(app) as c:
+        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
+        for i in range(6):
+            c.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
+        b = c.post("/api/merkle/build", headers=h).json()
+        a = c.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=h).json()
+        ok = c.post("/api/proof/verify", json={"batch_id": b["batch_id"], "seq_id": 2}, headers=h).json()
+        with app.state.ctx.engine.begin() as conn:
+            conn.execute(text("UPDATE security_logs SET username='attacker' WHERE seq_id=2"))
+        bad = c.post("/api/proof/verify", json={"batch_id": b["batch_id"]}, headers=h).json()
+    passed = (a["mode"] == "REAL" and a["chain_id"] == 15000 and a["explorer_url"].startswith("https://orchard.quaiscan.io/tx/")
+              and ok["result"] == "MATCH" and ok["inclusion_proof_valid"] and bad["result"] == "MISMATCH")
+    print(f"\nSCENARIO 5q | Anchored root verified via quai-service path | {'PASS' if passed else 'FAIL'} | "
+          f"mode={a['mode']} chain={a['chain_id']} explorer={a['explorer_url'][:40]}… MATCH -> {bad['result']} after edit")
+    assert passed
