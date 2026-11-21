@@ -20,6 +20,7 @@ def ingest(body: IngestIn, request: Request) -> dict:
     c = ctx(request)
     with c.chain_lock, c.engine.begin() as conn:  # lock => strictly sequential seq_id & chain
         log = repo.insert_log(conn, body.to_record())
+    c.note_ingest()
     c.hub.broadcast_from_thread("log", log)
     return {"status": "accepted", "seq_id": log["seq_id"], "prev_hash": log["prev_hash"],
             "curr_hash": log["curr_hash"], "received_at": log["received_at"]}

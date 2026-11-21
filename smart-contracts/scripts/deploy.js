@@ -34,9 +34,12 @@ async function main() {
   const broadcast = process.argv.includes("--broadcast");
   const contractName = arg("contract", "LogAnchor");
   const constructorArgs = JSON.parse(arg("args", "[]"));
-  const { RPC_URL, CYPRUS1_PK, CHAIN_ID } = process.env;
+  const { CHAIN_ID } = process.env;
+  // QUAI_RPC_URL / QUAI_PRIVATE_KEY are accepted as alternative names for RPC_URL / CYPRUS1_PK.
+  const RPC_URL = process.env.RPC_URL || process.env.QUAI_RPC_URL;
+  const CYPRUS1_PK = process.env.CYPRUS1_PK || process.env.QUAI_PRIVATE_KEY;
   const expectedChain = BigInt(CHAIN_ID || 15000);
-  if (!RPC_URL || !CYPRUS1_PK) throw new Error("RPC_URL and CYPRUS1_PK must be set in .env (throwaway testnet key)");
+  if (!RPC_URL || !CYPRUS1_PK) throw new Error("RPC_URL and CYPRUS1_PK (or QUAI_RPC_URL and QUAI_PRIVATE_KEY) must be set in .env (throwaway testnet key)");
 
   const artifactPath = path.join(__dirname, "..", "artifacts", "contracts", `${contractName}.sol`, `${contractName}.json`);
   if (!fs.existsSync(artifactPath)) throw new Error(`artifact not found: ${artifactPath} (run npx hardhat compile)`);

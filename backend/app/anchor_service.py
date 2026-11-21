@@ -14,9 +14,9 @@ NOTE = ("MATCH means the logs in this batch, re-hashed now, produce the root tha
 
 
 class ServiceError(Exception):
-    def __init__(self, status: int, detail: str):
+    def __init__(self, status: int, detail: str, extra: dict | None = None):
         super().__init__(detail)
-        self.status, self.detail = status, detail
+        self.status, self.detail, self.extra = status, detail, extra or {}
 
 
 def _batch(conn, batch_id: int) -> dict:
@@ -61,6 +61,8 @@ def anchor_batch(c: AppContext, batch_id: int) -> dict:
         if not res or res["root"] != b["root"]:
             raise ServiceError(409, f"{exc}; on-chain root does not match this batch, refusing to record it")
     except AnchorError as exc:
+        if getattr(c.anchorer, "can_anchor", True):  # configured but failed: tell the operator
+            c.alerter.send(f"Quai anchoring FAILED for shared batch {batch_id}: {exc}")
         raise ServiceError(503, str(exc))
     row = {"batch_id": batch_id, "onchain_batch_id": str(key), "root": b["root"], "mode": c.anchorer.mode, "chain_id": c.anchorer.chain_id,
            "tx_hash": res["tx_hash"], "block_number": res["block_number"], "block_timestamp": res["block_timestamp"],
@@ -74,6 +76,8 @@ def anchor_batch(c: AppContext, batch_id: int) -> dict:
                           ":mode,:chain_id,:tx_hash,:block_number,:block_timestamp,:contract_address,:explorer_url,"
                           ":created_at)"), row)
     c.hub.broadcast_from_thread("anchor", {"batch_id": batch_id, "tx_hash": row["tx_hash"], "mode": row["mode"]})
+    c.alerter.send(f"Quai anchor confirmed for shared batch {batch_id}: tx {row['tx_hash']}"
+                   + (f" {row['explorer_url']}" if row["explorer_url"] else ""))
     return {k: v for k, v in row.items() if k != "created_at"}
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hmac
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -18,6 +19,8 @@ from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 JWT_TTL = timedelta(minutes=60)
+# Local mode (no Supabase): the single local admin gets a fixed UUID so per-user features work there too.
+LOCAL_ADMIN_USER_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, "silent-local-admin"))
 
 
 def ctx(request: Request):
@@ -80,7 +83,7 @@ def verify_bearer(settings, token: str) -> dict:
     if settings.supabase_auth:
         return verify_supabase_token(settings, token)
     claims = decode_token(settings.jwt_secret, token)
-    return {**claims, "user_id": claims.get("sub"), "auth": "local"}
+    return {**claims, "user_id": LOCAL_ADMIN_USER_ID, "auth": "local"}
 
 
 def require_jwt(request: Request, authorization: str | None = Header(default=None)) -> dict:

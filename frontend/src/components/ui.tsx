@@ -44,7 +44,7 @@ const PILL: Record<string, string> = {
 const TONE: Record<string, string> = {
   green: "green", online: "green", PASS: "green", MATCH: "green", REAL: "green", resolved: "slate", info: "sky",
   yellow: "yellow", delayed: "yellow", NOT_ANCHORED: "yellow", warning: "yellow", SIMULATED: "yellow", "NOT CONFIGURED": "yellow", UNAVAILABLE: "yellow", CONSOLE: "yellow", sandbox: "yellow",
-  SQLITE: "sky", SUPABASE: "green",
+  SQLITE: "sky", SUPABASE: "green", confirmed: "green", pending: "yellow", failed: "red", "READ-ONLY": "yellow",
   red: "red", offline: "red", FAIL: "red", MISMATCH: "red", critical: "red", open: "red", live: "sky",
 };
 

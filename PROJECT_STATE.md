@@ -468,19 +468,28 @@ Server → client messages (JSON, one per event):
 ```
 Connection without a valid token is closed with code 1008 (policy violation).
 
-### App routes (short aliases used by the dashboard flow; same code and data as the `/api/...` routes)
+### App routes: per-user chains (signed-in users; tables `logs`, `merkle_roots`, `anchors`)
 
-| Route | Auth | Same as |
+Each user has an independent SHA-256 hash chain (`hash = SHA-256(prev_hash || canonical_json({user_id, message,
+created_at}))`, genesis `prev_hash = "0"*64`). The user is ALWAYS taken from the verified bearer token; bodies never
+carry a user id, and every query is filtered by it (RLS additionally limits direct Supabase access to own rows).
+The shared SOC chain of the Windows agent stays under `/api/...` and is unchanged.
+
+| Route | Auth | Response |
 |---|---|---|
-| `GET /health` | public | `GET /api/health` |
-| `POST /logs` | `X-API-Key` **or** bearer token | `POST /api/logs/ingest` (same body, same response) |
-| `GET /logs` | bearer | `GET /api/logs` (`page`, `page_size`, `q`) |
-| `GET /verify` | bearer | `POST /api/verify` for the whole live chain |
-| `POST /merkle/build` | bearer | `POST /api/merkle/build` |
-| `POST /anchor` | bearer | `POST /api/blockchain/anchor`; body optional `{ "batch_id": 3 }`, default = newest un-anchored batch (400 if none) |
-| `GET /anchors` | bearer | stored anchors: `{ "items": [{ "id", "merkle_root_id", "root", "leaf_count", "tx_hash", "chain_id", "block_number", "block_timestamp", "contract_address", "explorer_url", "mode", "status": "confirmed", "created_at" }] }` |
+| `GET /health` | public | same as `GET /api/health` |
+| `POST /logs` | bearer | body `{ "message": "1..4000 chars" }` → **201** `{ id, user_id, seq, message, prev_hash, hash, created_at }` |
+| `GET /logs` | bearer | `?page&page_size` → `{ items: [{ id, seq, message, prev_hash, hash, created_at }], page, page_size, total }` (own logs, newest first) |
+| `GET /verify` | bearer | `{ result: "PASS"|"FAIL", checked_count, issues: [{ type: modified|missing|reordered, seq_id, detail }], verified_at }` |
+| `POST /merkle/build` | bearer | **201** `{ id, root, leaf_count, from_seq, to_seq, created_at }` over own logs since the last root; 400 if none |
+| `GET /merkle/roots` | bearer | `{ items: [{ id, root, leaf_count, from_seq, to_seq, created_at, anchor_id, anchor_status, tx_hash }] }` |
+| `POST /anchor` | bearer | body optional `{ "merkle_root_id": "<uuid>" }` (default newest root not yet confirmed). **200** confirmed anchor · **202** `{detail, anchor}` pending (sent, receipt not received; retry later recovers it from the contract) · 400 nothing to anchor · 404 not your root · 409 already anchored / in progress / on-chain root differs · 503 `{detail, anchor?}` Quai not configured or unreachable (real error) |
+| `GET /anchors` | bearer | `{ items: [{ id, merkle_root_id, root, leaf_count, from_seq, to_seq, onchain_id, tx_hash, chain_id, status: pending|confirmed|failed, block_number, explorer_url, error, created_at, updated_at }] }` |
+| `POST /anchors/{anchor_id}/verify` | bearer | `{ result: MATCH|MISMATCH|NOT_ANCHORED, stored_root, local_root (recomputed from current logs), onchain_root (read from the contract), problems: [...], tx_hash, status, verified_at }` |
 
-Contract strings for tests: `GET /logs` · `GET /anchors`
+On-chain key of a per-user root: `uint256(SHA-256("silent:user-merkle-root:" + merkle_root_id))`.
+
+Contract strings for tests: `GET /logs` · `GET /anchors` · `GET /merkle/roots` · `POST /anchors/{anchor_id}/verify`
 
 ---
 

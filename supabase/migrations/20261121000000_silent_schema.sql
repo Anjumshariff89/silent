@@ -110,6 +110,50 @@ CREATE TABLE IF NOT EXISTS incidents (
 );
 CREATE INDEX IF NOT EXISTS ix_incidents_status ON incidents(status, created_at);
 
+-- ---------------------------------------------------------------------
+-- Per-user tamper-evident logs. Each signed-in (Supabase) user has an independent SHA-256 hash chain,
+-- Merkle roots over it, and anchors of those roots on Quai. The backend always filters by the user id taken
+-- from the verified access token; RLS (rls_supabase.sql) restricts direct API access to the owner.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS logs (
+    id          UUID PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    seq         INTEGER NOT NULL CHECK (seq >= 1),
+    message     TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 4000),
+    prev_hash   TEXT NOT NULL CHECK (length(prev_hash) = 64),
+    hash        TEXT NOT NULL UNIQUE CHECK (length(hash) = 64),
+    created_at  TEXT NOT NULL,
+    UNIQUE (user_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS merkle_roots (
+    id          UUID PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    root        TEXT NOT NULL CHECK (length(root) = 64),
+    leaf_count  INTEGER NOT NULL CHECK (leaf_count >= 1),
+    from_seq    INTEGER NOT NULL,
+    to_seq      INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    UNIQUE (user_id, from_seq),
+    CHECK (to_seq >= from_seq)
+);
+CREATE INDEX IF NOT EXISTS ix_merkle_roots_user ON merkle_roots(user_id, to_seq);
+
+CREATE TABLE IF NOT EXISTS anchors (
+    id              UUID PRIMARY KEY,
+    merkle_root_id  UUID NOT NULL UNIQUE REFERENCES merkle_roots(id) ON DELETE CASCADE,
+    onchain_id      TEXT NOT NULL UNIQUE,
+    tx_hash         TEXT,
+    chain_id        INTEGER NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('pending','confirmed','failed')),
+    block_number    BIGINT,
+    explorer_url    TEXT,
+    error           TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    CHECK (status <> 'confirmed' OR tx_hash IS NOT NULL)
+);
+
 -- =====================================================================
 -- Row Level Security for Supabase (run AFTER schema_postgres.sql; the migration file does both).
 --
@@ -152,6 +196,53 @@ BEGIN
         DROP POLICY IF EXISTS "log_writer reads" ON public.security_logs;
         CREATE POLICY "log_writer inserts" ON public.security_logs FOR INSERT TO log_writer WITH CHECK (true);
         CREATE POLICY "log_writer reads" ON public.security_logs FOR SELECT TO log_writer USING (true);
+    END IF;
+END
+$$;
+
+-- ---------------------------------------------------------------------
+-- Per-user tables (logs, merkle_roots, anchors): a signed-in user can read ONLY their own rows.
+-- Writes go through the backend, which also filters every query by the user id from the verified token
+-- (it connects as the table owner, so it does not rely on RLS for ownership).
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    ALTER TABLE public.logs ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.merkle_roots ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.anchors ENABLE ROW LEVEL SECURITY;
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated')
+       AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                   WHERE n.nspname = 'auth' AND p.proname = 'uid') THEN
+        DROP POLICY IF EXISTS "own logs" ON public.logs;
+        CREATE POLICY "own logs" ON public.logs FOR SELECT TO authenticated
+            USING (user_id = (SELECT auth.uid()));
+        DROP POLICY IF EXISTS "own merkle roots" ON public.merkle_roots;
+        CREATE POLICY "own merkle roots" ON public.merkle_roots FOR SELECT TO authenticated
+            USING (user_id = (SELECT auth.uid()));
+        DROP POLICY IF EXISTS "own anchors" ON public.anchors;
+        CREATE POLICY "own anchors" ON public.anchors FOR SELECT TO authenticated
+            USING (EXISTS (SELECT 1 FROM public.merkle_roots m
+                           WHERE m.id = anchors.merkle_root_id AND m.user_id = (SELECT auth.uid())));
+    END IF;
+
+    -- Supabase: tie rows to real accounts (deleting a user deletes their rows).
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'auth' AND table_name = 'users') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'logs_user_fk') THEN
+            ALTER TABLE public.logs ADD CONSTRAINT logs_user_fk
+                FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'merkle_roots_user_fk') THEN
+            ALTER TABLE public.merkle_roots ADD CONSTRAINT merkle_roots_user_fk
+                FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+        END IF;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        REVOKE ALL ON public.logs, public.merkle_roots, public.anchors FROM anon;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.logs, public.merkle_roots, public.anchors FROM authenticated;
     END IF;
 END
 $$;

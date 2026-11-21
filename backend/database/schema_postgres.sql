@@ -104,3 +104,47 @@ CREATE TABLE IF NOT EXISTS incidents (
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_incidents_status ON incidents(status, created_at);
+
+-- ---------------------------------------------------------------------
+-- Per-user tamper-evident logs. Each signed-in (Supabase) user has an independent SHA-256 hash chain,
+-- Merkle roots over it, and anchors of those roots on Quai. The backend always filters by the user id taken
+-- from the verified access token; RLS (rls_supabase.sql) restricts direct API access to the owner.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS logs (
+    id          UUID PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    seq         INTEGER NOT NULL CHECK (seq >= 1),
+    message     TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 4000),
+    prev_hash   TEXT NOT NULL CHECK (length(prev_hash) = 64),
+    hash        TEXT NOT NULL UNIQUE CHECK (length(hash) = 64),
+    created_at  TEXT NOT NULL,
+    UNIQUE (user_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS merkle_roots (
+    id          UUID PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    root        TEXT NOT NULL CHECK (length(root) = 64),
+    leaf_count  INTEGER NOT NULL CHECK (leaf_count >= 1),
+    from_seq    INTEGER NOT NULL,
+    to_seq      INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    UNIQUE (user_id, from_seq),
+    CHECK (to_seq >= from_seq)
+);
+CREATE INDEX IF NOT EXISTS ix_merkle_roots_user ON merkle_roots(user_id, to_seq);
+
+CREATE TABLE IF NOT EXISTS anchors (
+    id              UUID PRIMARY KEY,
+    merkle_root_id  UUID NOT NULL UNIQUE REFERENCES merkle_roots(id) ON DELETE CASCADE,
+    onchain_id      TEXT NOT NULL UNIQUE,
+    tx_hash         TEXT,
+    chain_id        INTEGER NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('pending','confirmed','failed')),
+    block_number    BIGINT,
+    explorer_url    TEXT,
+    error           TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    CHECK (status <> 'confirmed' OR tx_hash IS NOT NULL)
+);

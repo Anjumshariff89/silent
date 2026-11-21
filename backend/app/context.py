@@ -57,3 +57,25 @@ class AppContext:
     anchorer: Any = None  # QuaiServiceAnchorer (REAL) | UnconfiguredAnchorer (no Quai keys)
     hub: LiveHub = field(default_factory=LiveHub)
     chain_lock: threading.Lock = field(default_factory=threading.Lock)
+    # Telegram ingestion summary (one message per interval, never one per log) and duplicate-alert suppression.
+    ingest_count: int = 0
+    _stats_lock: threading.Lock = field(default_factory=threading.Lock)
+    _alerted: set = field(default_factory=set)
+
+    def note_ingest(self, n: int = 1) -> None:
+        with self._stats_lock:
+            self.ingest_count += n
+
+    def take_ingest_count(self) -> int:
+        with self._stats_lock:
+            n, self.ingest_count = self.ingest_count, 0
+            return n
+
+    def alert_once(self, key: str, text: str) -> bool:
+        """Send an alert once per key for the lifetime of this process (e.g. one per detected tamper)."""
+        with self._stats_lock:
+            if key in self._alerted:
+                return False
+            self._alerted.add(key)
+        self.alerter.send(text)
+        return True

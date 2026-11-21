@@ -20,7 +20,10 @@ function makeProvider(rpcUrl) {
 }
 
 function build() {
-  const { RPC_URL, CYPRUS1_PK, CHAIN_ID, CONTRACT_ADDRESS, QUAI_RPC_TIMEOUT_MS } = process.env;
+  const { CHAIN_ID, CONTRACT_ADDRESS, QUAI_RPC_TIMEOUT_MS } = process.env;
+  // QUAI_RPC_URL / QUAI_PRIVATE_KEY are accepted as alternative names for RPC_URL / CYPRUS1_PK.
+  const RPC_URL = process.env.RPC_URL || process.env.QUAI_RPC_URL;
+  const CYPRUS1_PK = process.env.CYPRUS1_PK || process.env.QUAI_PRIVATE_KEY;
   const config = {
     chainId: BigInt(CHAIN_ID || 15000),
     contractAddress: CONTRACT_ADDRESS || "",

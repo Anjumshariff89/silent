@@ -1,81 +1,92 @@
-"""Short routes for the dashboard app flow: POST/GET /logs, GET /verify, POST /merkle/build, POST /anchor, GET /anchors.
+"""Per-user app API (signed-in users): POST/GET /logs, GET /verify, POST /merkle/build, GET /merkle/roots,
+POST /anchor, GET /anchors, POST /anchors/{anchor_id}/verify.
 
-They call the same code as the /api/... routes (one hash chain, one Merkle builder, one anchoring path), so
-behaviour and data are identical; only the URLs are shorter. All are authenticated; POST /logs also accepts the
-agent X-API-Key.
+Each user has an independent hash chain in the tables logs / merkle_roots / anchors. The user is ALWAYS the one
+from the verified bearer token (request bodies never carry a user id). The shared SOC chain written by the
+Windows agent stays under /api/... (POST /api/logs/ingest etc.).
 """
 from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import text
 
-from backend.api.auth import ApiKeyOrJwt, Jwt, ctx
-from backend.api.core_routes import get_logs, ingest
-from backend.api.merkle_routes import build_batch
-from backend.api.schemas import IngestIn, RangeIn
-from backend.app.anchor_service import ServiceError, anchor_batch
-from backend.app.integrity_service import run_chain_verification
+from backend.api.auth import ctx, require_jwt
+from backend.app import user_chain
+from backend.app.anchor_service import ServiceError
 
-router = APIRouter(tags=["app"])
+router = APIRouter(tags=["app (per-user)"])
 
 
-@router.post("/logs", dependencies=[ApiKeyOrJwt])
-def post_logs(body: IngestIn, request: Request) -> dict:
-    """Ingest one log: validated, given the next seq_id and SHA-256 chained (same as /api/logs/ingest)."""
-    return ingest(body, request)
+def current_user(user: dict = Depends(require_jwt)) -> str:
+    return str(user.get("user_id"))
 
 
-@router.get("/logs", dependencies=[Jwt])
-def list_logs(request: Request, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
-              q: Optional[str] = Query(None, max_length=200)) -> dict:
-    return get_logs(request, page=page, page_size=page_size, q=q, event_id=None, event_type=None, severity=None,
-                    agent_id=None, source_ip=None, time_from=None, time_to=None, sort="desc")
-
-
-@router.get("/verify", dependencies=[Jwt])
-def verify_chain(request: Request) -> dict:
-    """Recompute every hash link of the live chain; tampering yields result FAIL, issues and incidents."""
-    return run_chain_verification(ctx(request))
-
-
-@router.post("/merkle/build", dependencies=[Jwt])
-def merkle_build(request: Request, body: RangeIn | None = None) -> dict:
-    body = body or RangeIn()
-    return build_batch(ctx(request).engine, body.from_seq, body.to_seq)
-
-
-class AnchorLatestIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    batch_id: Optional[int] = Field(default=None, ge=1)
-
-
-@router.post("/anchor", dependencies=[Jwt])
-def anchor_latest(request: Request, body: AnchorLatestIn | None = None) -> dict:
-    """Anchor a Merkle root on Quai (default: the newest batch not anchored yet) and store the tx hash."""
-    c = ctx(request)
-    batch_id = body.batch_id if body and body.batch_id else None
-    if batch_id is None:
-        with c.engine.connect() as conn:
-            batch_id = conn.execute(text(
-                "SELECT b.batch_id FROM merkle_batches b LEFT JOIN blockchain_anchors a ON a.batch_id=b.batch_id"
-                " WHERE a.batch_id IS NULL ORDER BY b.batch_id DESC LIMIT 1")).scalar()
-        if batch_id is None:
-            raise HTTPException(status_code=400, detail="No un-anchored Merkle batch: build one first (POST /merkle/build)")
+def _run(fn, *a, **k):
     try:
-        return anchor_batch(c, int(batch_id))
+        return fn(*a, **k)
     except ServiceError as exc:
-        raise HTTPException(status_code=exc.status, detail=exc.detail)
+        return JSONResponse(status_code=exc.status, content={"detail": exc.detail, **exc.extra})
 
 
-@router.get("/anchors", dependencies=[Jwt])
-def list_anchors(request: Request) -> dict:
-    """Stored anchors. A row exists only after the transaction was mined with status 1, hence status 'confirmed'."""
-    with ctx(request).engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT a.id, a.batch_id AS merkle_root_id, b.root, b.leaf_count, a.tx_hash, a.chain_id, a.block_number,"
-            " a.block_timestamp, a.contract_address, a.explorer_url, a.mode, a.created_at"
-            " FROM blockchain_anchors a JOIN merkle_batches b ON b.batch_id=a.batch_id ORDER BY a.id DESC"))
-        return {"items": [{**dict(r._mapping), "status": "confirmed"} for r in rows]}
+class LogIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class AnchorIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    merkle_root_id: Optional[str] = Field(default=None, max_length=64)
+
+
+@router.post("/logs", status_code=201)
+def post_log(body: LogIn, request: Request, user_id: str = Depends(current_user)):
+    """Append a log to YOUR chain: next seq, prev_hash = your previous hash, hash = SHA-256(prev || content)."""
+    return _run(user_chain.append_log, ctx(request), user_id, body.message)
+
+
+@router.get("/logs")
+def get_logs(request: Request, user_id: str = Depends(current_user),
+             page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500)):
+    """Your logs, newest first."""
+    return _run(user_chain.list_logs, ctx(request), user_id, page, page_size)
+
+
+@router.get("/verify")
+def verify(request: Request, user_id: str = Depends(current_user)):
+    """Recompute every hash and link of your chain. result PASS/FAIL, checked_count, issues (modified/missing/reordered)."""
+    return _run(user_chain.verify_user_chain, ctx(request), user_id)
+
+
+@router.post("/merkle/build", status_code=201)
+def merkle_build(request: Request, user_id: str = Depends(current_user)):
+    """Build and store a Merkle root over your logs added since your last root (400 if there are none)."""
+    return _run(user_chain.build_root, ctx(request), user_id)
+
+
+@router.get("/merkle/roots")
+def merkle_roots(request: Request, user_id: str = Depends(current_user)):
+    return _run(user_chain.list_roots, ctx(request), user_id)
+
+
+@router.post("/anchor")
+def anchor(request: Request, body: AnchorIn | None = None, user_id: str = Depends(current_user)):
+    """Anchor your newest un-anchored Merkle root (or `merkle_root_id`) on Quai Orchard Cyprus-1.
+
+    200 confirmed (tx_hash saved) · 202 pending (sent, no receipt yet) · 400 nothing to anchor · 409 already
+    anchored / in progress · 503 Quai not configured or unreachable (the real error is returned).
+    """
+    return _run(user_chain.anchor_root, ctx(request), user_id, body.merkle_root_id if body else None)
+
+
+@router.get("/anchors")
+def anchors(request: Request, user_id: str = Depends(current_user)):
+    return _run(user_chain.list_anchors, ctx(request), user_id)
+
+
+@router.post("/anchors/{anchor_id}/verify")
+def verify_anchor(anchor_id: str, request: Request, user_id: str = Depends(current_user)):
+    """Read the root back from the contract and compare it with the stored root and the root recomputed from your logs."""
+    return _run(user_chain.verify_anchor, ctx(request), user_id, anchor_id)

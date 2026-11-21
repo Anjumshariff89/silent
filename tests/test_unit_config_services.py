@@ -12,7 +12,7 @@ from backend.blockchain.anchor import AnchorError
 def _clear(monkeypatch):
     for k in ("MODE", "API_KEY", "JWT_SECRET", "DATABASE_URL", "RPC_URL", "CYPRUS1_PK",
               "CONTRACT_ADDRESS", "CHAIN_ID", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-              "SUPABASE_URL", "SUPABASE_JWT_SECRET", "FRONTEND_ORIGIN"):
+              "SUPABASE_URL", "SUPABASE_JWT_SECRET", "FRONTEND_ORIGIN", "QUAI_RPC_URL", "QUAI_PRIVATE_KEY"):
         monkeypatch.delenv(k, raising=False)
 
 

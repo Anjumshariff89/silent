@@ -10,6 +10,9 @@ import { blockchainBadgeLabel } from "@/lib/quai";
 import { ModeBadge, StatusDot } from "./ui";
 
 export const NAV = [
+  { href: "/me", label: "My Dashboard" },
+  { href: "/me/verify", label: "My Verify" },
+  { href: "/me/anchors", label: "My Anchors" },
   { href: "/", label: "Overview" },
   { href: "/logs", label: "Live Logs" },
   { href: "/agents", label: "Agent Monitoring" },

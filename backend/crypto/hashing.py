@@ -39,3 +39,15 @@ def compute_log_hash(prev_hash: str, log: Mapping[str, Any]) -> str:
     if len(prev_hash) != 64:
         raise ValueError("prev_hash must be 64 hex chars")
     return sha256_hex(prev_hash + canonical_json(hashed_content(log)))
+
+
+# Per-user logs (table `logs`, one independent chain per Supabase user): the SAME construction,
+# SHA-256(prev_hash || canonical_json(content)), over the per-user fields. user_id is hashed so a row cannot be
+# moved into another user's chain without breaking it.
+USER_LOG_HASHED_FIELDS = ("user_id", "message", "created_at")
+
+
+def compute_user_log_hash(prev_hash: str, log: Mapping[str, Any]) -> str:
+    if len(prev_hash) != 64:
+        raise ValueError("prev_hash must be 64 hex chars")
+    return sha256_hex(prev_hash + canonical_json({k: str(log.get(k)) for k in USER_LOG_HASHED_FIELDS}))

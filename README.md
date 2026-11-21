@@ -44,6 +44,17 @@ logs through the API, verifies the chain and builds a Merkle batch:
 - More test logs at any time: `.\.venv\Scripts\python.exe scripts\seed_logs.py --count 20 --verify`
 - Linux/macOS: `./start.sh` (same steps; `--verifier`, `--allow-broadcast`, `--stop`)
 
+## Two kinds of logs
+
+| | Shared SOC chain | Your own chain (per user) |
+|---|---|---|
+| Written by | Windows agent / `scripts\seed_logs.py` (`X-API-Key`) | signed-in user (dashboard *My Dashboard* or `POST /logs`) |
+| Visible to | every signed-in analyst | only that user (backend filter + Supabase RLS) |
+| API | `/api/logs/ingest`, `/api/logs`, `/api/verify`, `/api/merkle/*`, `/api/blockchain/*` | `/logs`, `/verify`, `/merkle/build`, `/merkle/roots`, `/anchor`, `/anchors`, `/anchors/{id}/verify` |
+| Dashboard | Overview, Live Logs, Hash-Chain, Integrity, Merkle, Blockchain, Evidence | My Dashboard, My Verify, My Anchors |
+
+Both use the same SHA-256 hash chaining, the same Merkle tree and the same Quai anchoring (`backend/blockchain/quai_service.py`).
+
 ## Configuration (`.env`)
 
 Edit `.env` yourself. It is git-ignored: never commit it, never paste keys into chats or tickets.
@@ -55,8 +66,8 @@ Edit `.env` yourself. It is git-ignored: never commit it, never paste keys into 
 | `API_KEY` | *(generated)* | Agent → API key (`X-API-Key`) and dashboard password |
 | `JWT_SECRET` | *(generated)* | Signs dashboard JWTs |
 | `DATABASE_URL` | `sqlite:///./local.db` | SQLite, or Supabase Postgres |
-| `RPC_URL` | empty | Quai Orchard Cyprus-1 RPC |
-| `CYPRUS1_PK` | empty | **Throwaway** Cyprus-1 testnet private key (read only by the Node quai-service) |
+| `RPC_URL` (alias `QUAI_RPC_URL`) | empty | Quai Orchard Cyprus-1 RPC, e.g. `https://orchard.rpc.quai.network/cyprus1` (public, no API key) |
+| `CYPRUS1_PK` (alias `QUAI_PRIVATE_KEY`) | empty | **Throwaway** Cyprus-1 testnet private key (read only by the Node quai-service; never in the frontend) |
 | `CHAIN_ID` | `15000` | Quai Orchard; the quai-service refuses to sign if the RPC reports another chain |
 | `CONTRACT_ADDRESS` | empty | Deployed `LogAnchor` contract on Cyprus-1 |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | empty | Incident alerts |
@@ -148,6 +159,10 @@ Logs still arrive from the Windows agent / `scripts\seed_logs.py` with the `X-AP
 2. Send any message to your bot, then open `https://api.telegram.org/bot<token>/getUpdates` in a browser and copy
    `message.chat.id` into `TELEGRAM_CHAT_ID=`.
 3. Restart. The **telegram** badge turns **REAL** (otherwise **CONSOLE**). If Telegram fails, alerts fall back to the console (the token is never logged).
+
+Messages sent: tampering detected (once per new problem, shared chain and per-user chains), Quai anchoring confirmed
+(tx hash + explorer link) or failed (real error), agent offline, and one **ingestion summary per minute** with the
+number of logs chained (never one message per log, which would hit Telegram's rate limits).
 
 ### 4. Windows Event Log (log collection)
 

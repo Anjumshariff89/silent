@@ -14,13 +14,14 @@ caught by Merkle anchoring (anchored root MISMATCH), not by the chain alone.
 """
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Callable, Iterable
 
 from backend.crypto.hashing import GENESIS_PREV_HASH, compute_log_hash
 
 
 def verify_chain(rows: Iterable[dict], expected_first_seq: int = 1,
-                 expected_first_prev: str = GENESIS_PREV_HASH) -> dict:
+                 expected_first_prev: str = GENESIS_PREV_HASH,
+                 hash_fn: Callable[[str, dict], str] = compute_log_hash) -> dict:
     rows = list(rows)
     issues: list[dict] = []
     by_curr = {r["curr_hash"]: r["seq_id"] for r in rows if r.get("curr_hash")}
@@ -40,7 +41,7 @@ def verify_chain(rows: Iterable[dict], expected_first_seq: int = 1,
             expected_seq, expected_prev = seq + 1, None
             continue
 
-        recomputed = compute_log_hash(r["prev_hash"], r)
+        recomputed = hash_fn(r["prev_hash"], r)
         if recomputed != r["curr_hash"]:
             issues.append({"type": "modified", "seq_id": seq,
                            "detail": f"curr_hash mismatch: stored {r['curr_hash'][:12]}…, recomputed {recomputed[:12]}…"})

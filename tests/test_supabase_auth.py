@@ -106,28 +106,17 @@ def test_es256_token_verified_with_project_jwks(sc, monkeypatch):
     assert sc.get("/logs", headers=bearer(supa_token(secret=other, alg="ES256"))).status_code == 401
 
 
-def test_full_app_flow_ingest_verify_build_anchor_list_then_tamper(sc, supa_app):
+def test_shared_soc_chain_routes_work_with_supabase_tokens(sc, supa_app):
+    """The shared agent chain (/api/...) keeps working with Supabase sign-in: ingest (API key), verify, tamper."""
     h = bearer(supa_token())
     for i in range(3):
-        assert sc.post("/logs", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY}).status_code == 200
-    r = sc.post("/logs", json=sample_event(3), headers=h)          # a signed-in user may ingest too
-    assert r.status_code == 200 and r.json()["seq_id"] == 4
-    assert sc.post("/logs", json=sample_event(4)).status_code == 401
-    assert sc.get("/logs", headers=h).json()["total"] == 4
-    assert sc.get("/verify", headers=h).json()["result"] == "PASS"
-    assert sc.post("/anchor", headers=h).status_code == 400          # nothing built yet
-    b = sc.post("/merkle/build", headers=h).json()
-    a = sc.post("/anchor", headers=h)                                 # default: newest un-anchored batch
-    assert a.status_code == 200, a.text
-    tx = a.json()["tx_hash"]
-    items = sc.get("/anchors", headers=h).json()["items"]
-    assert [(x["merkle_root_id"], x["tx_hash"], x["root"], x["status"]) for x in items] == [(b["batch_id"], tx, b["root"], "confirmed")]
-    assert sc.post("/anchor", headers=h).status_code == 400          # already anchored, nothing left
-    with supa_app.state.ctx.engine.begin() as conn:                  # attacker edits one stored row
+        assert sc.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY}).status_code == 200
+    assert sc.get("/api/logs", headers=h).json()["total"] == 3
+    assert sc.post("/api/verify", headers=h).json()["result"] == "PASS"
+    with supa_app.state.ctx.engine.begin() as conn:
         conn.execute(text("UPDATE security_logs SET username='attacker' WHERE seq_id=2"))
-    v = sc.get("/verify", headers=h).json()
+    v = sc.post("/api/verify", headers=h).json()
     assert v["result"] == "FAIL" and any(i["seq_id"] == 2 for i in v["issues"])
-    assert sc.post("/api/proof/verify", json={"batch_id": b["batch_id"]}, headers=h).json()["result"] == "MISMATCH"
 
 
 def test_websocket_accepts_supabase_token_only(sc):
@@ -179,7 +168,7 @@ def test_rls_signed_in_users_read_only_anon_nothing_on_postgres():
     with eng.begin() as c:
         c.execute(text("INSERT INTO agents(agent_id, hostname, agent_version, collector_mode, registered_at)"
                        " VALUES ('a1','h','1','windows','2026-11-21T00:00:00Z')"))
-        assert c.execute(text("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND rowsecurity")).scalar() == 8
+        assert c.execute(text("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND rowsecurity")).scalar() == 11
     with eng.begin() as c:
         c.execute(text("SET LOCAL ROLE authenticated"))
         assert c.execute(text("SELECT count(*) FROM agents")).scalar() == 1
@@ -197,14 +186,30 @@ def test_rls_signed_in_users_read_only_anon_nothing_on_postgres():
 def test_repeated_verification_does_not_duplicate_open_incidents_or_alerts(sc, supa_app):
     h = bearer(supa_token())
     for i in range(3):
-        sc.post("/logs", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
+        sc.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
     with supa_app.state.ctx.engine.begin() as conn:
         conn.execute(text("UPDATE security_logs SET username='attacker' WHERE seq_id=2"))
-    first, second = sc.get("/verify", headers=h).json(), sc.get("/verify", headers=h).json()
+    first, second = sc.post("/api/verify", headers=h).json(), sc.post("/api/verify", headers=h).json()
     assert first["result"] == second["result"] == "FAIL"
     assert len(first["incidents_created"]) == 1 and second["incidents_created"] == []
     assert second["incidents_already_open"] == first["incidents_created"]
     assert sc.get("/api/incidents", headers=h).json()["total"] == 1
     assert sc.post("/api/incidents/resolve", headers=h).status_code == 200
-    third = sc.get("/verify", headers=h).json()                     # still tampered, old incident resolved -> new one
+    third = sc.post("/api/verify", headers=h).json()                     # still tampered, old incident resolved -> new one
     assert len(third["incidents_created"]) == 1
+
+
+def test_unexpected_errors_are_json_500_with_cors_headers(supa_app):
+    """A crash must not look like 'Cannot reach the API' in the browser: JSON 500 + CORS headers."""
+    from fastapi import APIRouter
+    r = APIRouter()
+
+    @r.get("/boom")
+    def boom():
+        raise ValueError("corrupt row")
+    supa_app.include_router(r)
+    with TestClient(supa_app, raise_server_exceptions=False) as c:
+        res = c.get("/boom", headers={"Origin": "http://127.0.0.1:3000"})
+    assert res.status_code == 500 and res.json()["detail"].startswith("Internal server error (ValueError)")
+    assert res.headers.get("access-control-allow-origin") == "http://127.0.0.1:3000"
+    assert "corrupt row" not in res.text

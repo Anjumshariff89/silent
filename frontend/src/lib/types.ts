@@ -172,3 +172,64 @@ export interface LiveMessage {
   type: "hello" | "log" | "heartbeat" | "agent_status" | "incident" | "integrity" | "anchor";
   data: Record<string, unknown>;
 }
+
+// ---- per-user chain (POST/GET /logs, /verify, /merkle/*, /anchor, /anchors) ----
+export interface UserLog {
+  id: string;
+  seq: number;
+  message: string;
+  prev_hash: string;
+  hash: string;
+  created_at: string;
+}
+
+export interface UserVerify {
+  result: "PASS" | "FAIL";
+  checked_count: number;
+  issues: Issue[];
+  verified_at: string;
+}
+
+export interface MerkleRootItem {
+  id: string;
+  root: string;
+  leaf_count: number;
+  from_seq: number;
+  to_seq: number;
+  created_at: string;
+  anchor_id: string | null;
+  anchor_status: AnchorStatus | null;
+  tx_hash: string | null;
+}
+
+export type AnchorStatus = "pending" | "confirmed" | "failed";
+
+export interface UserAnchor {
+  id: string;
+  merkle_root_id: string;
+  root: string;
+  leaf_count: number;
+  from_seq: number;
+  to_seq: number;
+  onchain_id: string;
+  tx_hash: string | null;
+  chain_id: number;
+  status: AnchorStatus;
+  block_number: number | null;
+  explorer_url: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnchorVerify {
+  anchor_id: string;
+  result: "MATCH" | "MISMATCH" | "NOT_ANCHORED";
+  status: AnchorStatus;
+  tx_hash?: string | null;
+  stored_root: string;
+  local_root: string | null;
+  onchain_root: string | null;
+  problems: string[];
+  verified_at: string;
+}

@@ -47,6 +47,8 @@ CONTRACT_ENDPOINTS = [
     "POST /merkle/build",
     "POST /anchor",
     "GET /anchors",
+    "GET /merkle/roots",
+    "POST /anchors/{anchor_id}/verify",
 ]
 
 
