@@ -50,7 +50,7 @@ class HeartbeatIn(Strict):
     agent_id: str = AgentId
     hostname: str = Field(min_length=1, max_length=255)
     agent_version: str = Field(default="0.0.0", max_length=32)
-    collector_mode: Literal["windows", "simulator"] = "simulator"
+    collector_mode: Literal["windows", "simulator"] = "windows"  # "simulator" kept only for rows written by older versions
     sent_at: Optional[datetime] = None
 
 

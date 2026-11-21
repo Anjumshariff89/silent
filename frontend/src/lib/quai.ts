@@ -23,8 +23,8 @@ export function explorerAddress(chainId: number | null | undefined, addr: string
   return base && addr ? `${base}/address/${addr}` : null;
 }
 
-/** Header badge text for the blockchain integration, as required: "Quai Orchard (REAL)" or "SIMULATED". */
-export function blockchainBadgeLabel(mode: "REAL" | "SIMULATED", chainId?: number | null): string {
-  if (mode !== "REAL") return "SIMULATED";
-  return chainId === QUAI_MAINNET ? "Quai Mainnet (REAL)" : "Quai Orchard (REAL)";
+/** Header badge text: "Quai Orchard (REAL)", "Quai Orchard (READ-ONLY)" (live RPC, no anchoring) or "NOT CONFIGURED". */
+export function blockchainBadgeLabel(mode: string, chainId?: number | null): string {
+  if (mode !== "REAL" && mode !== "READ-ONLY") return "NOT CONFIGURED";
+  return `${chainId === QUAI_MAINNET ? "Quai Mainnet" : "Quai Orchard"} (${mode})`;
 }

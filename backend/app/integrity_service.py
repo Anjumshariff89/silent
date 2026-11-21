@@ -23,11 +23,16 @@ def run_chain_verification(c: AppContext, *, source: Engine | None = None, targe
             prev = repo.get_log(conn, from_seq - 1)
             first_prev, first_seq = (prev["curr_hash"] if prev else None), from_seq
     report = verify_chain(rows, expected_first_seq=first_seq, expected_first_prev=first_prev)
-    incidents = []
+    incidents, already_open = [], []
     with c.engine.begin() as conn:
         v = repo.record_verification(conn, kind="chain", result=report["result"], target=target,
                                      checked_count=report["checked_count"], issues=report["issues"])
         for issue in report["issues"]:
+            existing = repo.find_open_incident(conn, type=issue["type"], seq_id=issue["seq_id"], target=target,
+                                               description=issue["detail"])
+            if existing:  # same unresolved problem: no duplicate incident, no repeated alert
+                already_open.append(existing)
+                continue
             prefix = "[SANDBOX DEMO] " if target == "sandbox" else ""
             text_ = f"{prefix}Tamper detected: {issue['type'].upper()} at seq {issue['seq_id']} - {issue['detail']}"
             channel, sent = c.alerter.send(text_)
@@ -35,7 +40,8 @@ def run_chain_verification(c: AppContext, *, source: Engine | None = None, targe
                                                   verification_id=v["id"], target=target, description=issue["detail"],
                                                   alert_channel=channel, alert_sent=sent))
     out = {"verification_id": v["id"], "target": target, **report,
-           "incidents_created": [i["id"] for i in incidents], "verified_at": v["verified_at"]}
+           "incidents_created": [i["id"] for i in incidents], "incidents_already_open": already_open,
+           "verified_at": v["verified_at"]}
     c.hub.broadcast_from_thread("integrity", {"status": "green" if report["result"] == "PASS" else "red",
                                               "last_result": report["result"], "target": target})
     for i in incidents:

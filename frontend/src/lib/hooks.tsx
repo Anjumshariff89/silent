@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { api, getToken, USE_MOCK, wsUrl } from "./api";
+import { api, wsUrl } from "./api";
+import { useAuth } from "@/components/AuthProvider";
 import type { LiveMessage } from "./types";
 
 export interface Query<T> {
@@ -52,9 +53,10 @@ const LiveContext = createContext<LiveState>({ connected: false, last: null, cou
 export function LiveProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<LiveState>({ connected: false, last: null, counter: 0, recentLogs: [] });
   const retry = useRef(0);
+  const signedIn = Boolean(useAuth().token);
 
   useEffect(() => {
-    if (USE_MOCK || !getToken()) return;
+    if (!signedIn) return;
     let ws: WebSocket | null = null;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -77,7 +79,7 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     };
     connect();
     return () => { stopped = true; clearTimeout(timer); ws?.close(); };
-  }, []);
+  }, [signedIn]);
 
   return <LiveContext.Provider value={state}>{children}</LiveContext.Provider>;
 }

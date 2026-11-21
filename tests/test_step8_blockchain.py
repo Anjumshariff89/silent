@@ -87,9 +87,10 @@ def test_not_anchored(client, jwt_headers, ingest):
     assert r["result"] == "NOT_ANCHORED"
 
 
-def test_simulator_ledger_is_write_once(tmp_path):
-    from backend.blockchain.anchor import AlreadyAnchored, SimulatedChain
-    ch = SimulatedChain(tmp_path / "l.json")
+def test_fake_chain_test_double_is_write_once(tmp_path):
+    from backend.blockchain.anchor import AlreadyAnchored
+    from tests.fake_chain import FakeChain
+    ch = FakeChain(tmp_path / "l.json")
     a1 = ch.anchor("aa" * 32, 1)
     a2 = ch.anchor("bb" * 32, 2)
     assert a2["block_number"] == a1["block_number"] + 1
@@ -107,9 +108,36 @@ def test_verifier_service_runs_separately(tmp_path, capsys):
     with TestClient(create_app(s, run_monitor=False)) as api:
         for i in range(12):
             api.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
-    report = run_once(build_context(s), min_batch=10)  # new context = separate from the API/agent
+    from tests.fake_chain import FakeChain
+    ctx = build_context(s)  # new context = separate from the API/agent
+    ctx.anchorer = FakeChain(tmp_path / "fake_chain.json")
+    report = run_once(ctx, min_batch=10)
     assert report["chain"] == "PASS" and report["built"] == 1 and report["anchored"].startswith("0x")
     assert report["batches"] == {1: "MATCH"}
+
+
+def test_without_quai_keys_anchoring_is_not_configured_and_fails_clearly(tmp_path):
+    """Real mode: no simulated chain. Without RPC_URL/CYPRUS1_PK/CONTRACT_ADDRESS nothing is anchored."""
+    from fastapi.testclient import TestClient
+    from backend.app.factory import build_context
+    from backend.blockchain.anchor import UnconfiguredAnchorer
+    from backend.verifier_service import run_once
+    from tests.conftest import TEST_API_KEY, sample_event
+    s = make_settings(tmp_path)
+    app = create_app(s, run_monitor=False)
+    assert isinstance(app.state.ctx.anchorer, UnconfiguredAnchorer)
+    with TestClient(app) as c:
+        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
+        for i in range(12):
+            c.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})
+        b = c.post("/api/merkle/build", headers=h).json()
+        r = c.post("/api/blockchain/anchor", json={"batch_id": b["batch_id"]}, headers=h)
+        assert r.status_code == 503 and "not configured" in r.json()["detail"]
+        st = c.get("/api/blockchain/status", headers=h).json()
+        assert st["mode"] == "NOT CONFIGURED" and st["connected"] is False and st["anchored_batches"] == 0
+        assert c.post("/api/proof/verify", json={"batch_id": b["batch_id"]}, headers=h).json()["result"] == "NOT_ANCHORED"
+    report = run_once(build_context(s), min_batch=1)  # verifier process: reports the error, invents nothing
+    assert report["anchored"] is None or str(report["anchored"]).startswith("error: Quai anchoring is not configured")
 
 
 def test_two_databases_can_share_one_contract_without_key_collision(tmp_path):
@@ -121,8 +149,8 @@ def test_two_databases_can_share_one_contract_without_key_collision(tmp_path):
     for name in ("db1", "db2"):
         (tmp_path / name).mkdir()
         app = create_app(make_settings(tmp_path / name), run_monitor=False)
-        from backend.blockchain.anchor import SimulatedChain
-        app.state.ctx.anchorer = SimulatedChain(shared)  # same "contract" for both databases
+        from tests.fake_chain import FakeChain
+        app.state.ctx.anchorer = FakeChain(shared)  # same test "contract" for both databases
         with TestClient(app) as c:
             h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
             for i in range(3):
@@ -233,7 +261,7 @@ def _free_port():
 
 @pytest.mark.skipif(not shutil.which("node") or not (SERVICE_DIR / "node_modules").exists(),
                     reason="node or quai-service node_modules missing")
-def test_real_node_quai_service_simulated_mode_end_to_end(tmp_path):
+def test_real_node_quai_service_not_configured_mode_end_to_end(tmp_path):
     """Starts the real Node quai-service without keys and drives it from Python."""
     port = _free_port()
     env = {k: v for k, v in os.environ.items() if k not in ("RPC_URL", "CYPRUS1_PK", "CONTRACT_ADDRESS")}
@@ -249,11 +277,11 @@ def test_real_node_quai_service_simulated_mode_end_to_end(tmp_path):
                 break
             time.sleep(0.1)
         st = a.status()
-        assert st["mode"] == "SIMULATED" and st["chain_id"] == 15000 and st["broadcast_allowed"] is False
+        assert st["mode"] == "NOT CONFIGURED" and st["chain_id"] == 15000 and st["broadcast_allowed"] is False
         assert a.connected() is False
         with pytest.raises(AnchorError, match="HTTP 403"):  # broadcast gate comes first
             a.anchor("ab" * 32, 1)
     finally:
         proc.terminate()
         out = proc.communicate(timeout=10)[0]
-    assert "mode=SIMULATED" in out and "listening on http://127.0.0.1:" in out
+    assert "mode=NOT CONFIGURED" in out and "listening on http://127.0.0.1:" in out

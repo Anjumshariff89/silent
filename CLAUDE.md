@@ -15,9 +15,11 @@ Tamper-evident security logging: SHA-256 hash chains → Merkle trees → anchor
   **"approve"**. First show: network, chain ID, wallet address (never the key), contract name, constructor args.
   Use `node scripts/deploy.js` (dry run) to produce that plan; `--broadcast` / `--allow-broadcast` only after approval.
 - **Throwaway testnet wallet only. Synthetic data only. Never touch real system logs** (the Windows collector is read-only).
-- **`.env.example` holds exactly these 10 lines** (enforced by `tests/test_step1_setup.py`):
-  `MODE=simulator`, `API_KEY=`, `JWT_SECRET=`, `DATABASE_URL=sqlite:///./local.db`, `RPC_URL=`, `CYPRUS1_PK=`,
-  `CHAIN_ID=15000`, `CONTRACT_ADDRESS=`, `TELEGRAM_BOT_TOKEN=`, `TELEGRAM_CHAT_ID=`.
+- **`.env.example` holds exactly these 13 lines** (enforced by `tests/test_step1_setup.py`):
+  `MODE=real`, `API_KEY=`, `JWT_SECRET=`, `DATABASE_URL=sqlite:///./local.db`, `RPC_URL=`, `CYPRUS1_PK=`,
+  `CHAIN_ID=15000`, `CONTRACT_ADDRESS=`, `TELEGRAM_BOT_TOKEN=`, `TELEGRAM_CHAT_ID=`, `SUPABASE_URL=`,
+  `SUPABASE_JWT_SECRET=`, `FRONTEND_ORIGIN=`. The Supabase service-role key is never needed (the backend only
+  verifies user tokens and talks to Postgres via `DATABASE_URL`); never put it in any `.env`.
 - **Do not integrate:** Polygon, x402 Work, Hashference, AbuseIPDB, IPFS (no uploads), OpenTimestamps, Slack.
 - **Pin every dependency** (exact versions; `requirements.txt` + `requirements.lock.txt`, npm `--save-exact`).
 - Target platform is **Windows 11 / PowerShell**; give Windows-compatible commands to the user.

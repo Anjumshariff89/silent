@@ -74,7 +74,10 @@ def list_agents(conn: Connection, online_s: float, offline_s: float) -> list[dic
         d = _row(r)
         status, age = agent_status(d["last_heartbeat"], online_s, offline_s)
         out.append({"agent_id": d["agent_id"], "hostname": d["hostname"], "agent_version": d["agent_version"],
-                    "collector_mode": d["collector_mode"], "last_heartbeat": d["last_heartbeat"],
+                    # An agent that never sent a heartbeat only posts logs through the ingest API (e.g. the seed
+                    # script); the stored column default is a legacy value, so report what it really is.
+                    "collector_mode": d["collector_mode"] if d["last_heartbeat"] else "api",
+                    "last_heartbeat": d["last_heartbeat"],
                     "seconds_since_heartbeat": age, "status": status, "offline_alerted": bool(d["offline_alerted"])})
     return out
 
@@ -173,6 +176,14 @@ def create_incident(conn: Connection, *, type: str, description: str, severity: 
         " alert_channel, alert_sent, created_at) VALUES (:type,:sev,:seq,:ag,:b,:v,:tg,:d,:ch,:s,:t)"), params)
     new_id = conn.execute(text("SELECT max(id) FROM incidents")).scalar()
     return get_incident(conn, new_id)
+
+
+def find_open_incident(conn: Connection, *, type: str, seq_id: int | None, target: str, description: str) -> int | None:
+    """Id of an OPEN incident for the same issue (so repeated verifications do not duplicate it)."""
+    return conn.execute(text(
+        "SELECT id FROM incidents WHERE status='open' AND type=:ty AND target=:tg AND description=:d"
+        " AND ((seq_id IS NULL AND :seq IS NULL) OR seq_id=:seq) ORDER BY id LIMIT 1"),
+        {"ty": type, "tg": target, "d": description, "seq": seq_id}).scalar()
 
 
 def get_incident(conn: Connection, incident_id: int) -> dict:

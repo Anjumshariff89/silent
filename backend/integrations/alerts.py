@@ -1,4 +1,4 @@
-"""Incident alerts: Telegram Bot API (REAL) with console fallback (SIMULATED).
+"""Incident alerts: Telegram Bot API (REAL) with console fallback (CONSOLE).
 
 The bot token is used only inside the request URL and is never logged or included in errors.
 """

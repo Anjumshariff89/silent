@@ -8,7 +8,7 @@
     "start": "node server.js",
     "start:broadcast": "node server.js --allow-broadcast",
     "test": "node --test test/app.test.js",
-    "test:live": "QUAI_LIVE=1 node --test --test-force-exit test/live-readonly.test.js"
+    "test:live": "node test/run-live.js"
   },
   "engines": {
     "node": ">=20"

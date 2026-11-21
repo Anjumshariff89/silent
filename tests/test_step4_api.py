@@ -84,7 +84,7 @@ def test_websocket_rejects_bad_token(client):
 def test_heartbeat_then_stop_flips_agent_offline_and_creates_incident(app, client, agent_headers, jwt_headers):
     s = app.state.ctx.settings
     s.heartbeat_online_s, s.heartbeat_offline_s = 0.5, 1.0
-    hb = {"agent_id": "agent-hb", "hostname": "WIN-SYNTH-02", "agent_version": "0.1.0", "collector_mode": "simulator"}
+    hb = {"agent_id": "agent-hb", "hostname": "WIN-SYNTH-02", "agent_version": "0.1.0", "collector_mode": "windows"}
     assert client.post("/api/heartbeats", json=hb, headers=agent_headers).status_code == 200
     agents = {a["agent_id"]: a for a in client.get("/api/agents", headers=jwt_headers).json()["items"]}
     assert agents["agent-hb"]["status"] == "online"
@@ -100,20 +100,30 @@ def test_heartbeat_then_stop_flips_agent_offline_and_creates_incident(app, clien
     assert client.get("/api/heartbeats", headers=jwt_headers).json()["items"][0]["agent_id"] == "agent-hb"
 
 
-def test_health_reports_simulated_badges_and_no_secrets(client, settings):
-    body = client.get("/api/health").json()
-    assert body["status"] == "ok"
-    assert body["integrations"] == {"blockchain": "SIMULATED", "database": "SIMULATED", "telegram": "SIMULATED",
-                                    "windows_event_log": "SIMULATED"}
-    assert settings.api_key not in str(body) and settings.jwt_secret not in str(body)
+def test_health_reports_truthful_status_and_no_secrets(real_app, settings):
+    from fastapi.testclient import TestClient
+    with TestClient(real_app) as c:
+        for path in ("/health", "/api/health"):
+            body = c.get(path).json()
+            assert body["status"] == "ok"
+            assert body["integrations"] == {"blockchain": "NOT CONFIGURED", "database": "SQLITE",
+                                            "telegram": "CONSOLE", "windows_event_log": "UNAVAILABLE", "auth": "LOCAL"}
+            assert settings.api_key not in str(body) and settings.jwt_secret not in str(body)
 
 
 def test_concurrent_first_contact_does_not_500(client, agent_headers):
     """Regression: first heartbeat + first events for a new agent arriving at once (seen in live run)."""
     from concurrent.futures import ThreadPoolExecutor
-    hb = {"agent_id": "agent-race", "hostname": "h", "agent_version": "0.1.0", "collector_mode": "simulator"}
+    hb = {"agent_id": "agent-race", "hostname": "h", "agent_version": "0.1.0", "collector_mode": "windows"}
     calls = [("/api/heartbeats", hb)] * 5 + [("/api/logs/ingest", sample_event(i, agent_id="agent-race"))
                                              for i in range(5)]
     with ThreadPoolExecutor(10) as pool:
         codes = list(pool.map(lambda c: client.post(c[0], json=c[1], headers=agent_headers).status_code, calls))
     assert codes == [200] * 10
+
+
+def test_agent_known_only_from_ingest_is_reported_as_api_not_simulator(client, agent_headers, jwt_headers):
+    ev = sample_event(1, agent_id="seed-script")
+    assert client.post("/api/logs/ingest", json=ev, headers=agent_headers).status_code == 200
+    agents = {a["agent_id"]: a for a in client.get("/api/agents", headers=jwt_headers).json()["items"]}
+    assert agents["seed-script"]["collector_mode"] == "api"

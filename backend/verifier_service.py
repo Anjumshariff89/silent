@@ -1,7 +1,7 @@
 """Standalone verifier + anchoring process, separate from the log agent (and from the API process).
 
 Loop: verify the hash chain -> build a Merkle batch when enough unbatched logs exist -> anchor it
--> re-verify every anchored batch against the chain/simulator.
+-> re-verify every anchored batch against the Quai contract.
 
     .\\.venv\\Scripts\\python.exe -m backend.verifier_service            # loop every 60 s
     .\\.venv\\Scripts\\python.exe -m backend.verifier_service --once     # single pass

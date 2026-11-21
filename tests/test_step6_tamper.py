@@ -82,19 +82,20 @@ def test_api_verify_on_tampered_live_db_creates_incident_and_alert(app, live, cl
     assert client.get("/api/integrity/status", headers=jwt_headers).json()["status"] == "red"
 
 
-def test_demo_tamper_endpoint_uses_copy_and_turns_status_red(live, client, jwt_headers):
-    client.post("/api/verify", headers=jwt_headers)
-    r = client.post("/api/demo/tamper", json={"seq_id": 2, "kind": "modify"}, headers=jwt_headers).json()
-    assert r["original_unchanged"] is True and r["verification"]["result"] == "FAIL"
-    assert client.get("/api/integrity/status", headers=jwt_headers).json()["status"] == "red"
-    assert client.post("/api/verify", headers=jwt_headers).json()["result"] == "PASS"  # live chain intact
-    reset = client.post("/api/demo/reset", headers=jwt_headers).json()
-    assert reset["live_verification"] == "PASS"
+def test_tamper_demo_endpoints_are_removed(live, client, jwt_headers):
+    """Real mode: the sandbox demo is gone; tamper detection runs only on real data via POST /api/verify."""
+    assert client.post("/api/demo/tamper", json={"seq_id": 2}, headers=jwt_headers).status_code == 404
+    assert client.post("/api/demo/reset", headers=jwt_headers).status_code == 404
+
+
+def test_integrity_status_turns_red_on_real_tamper_and_green_after_resolve(app, live, client, jwt_headers):
+    from sqlalchemy import text
+    assert client.post("/api/verify", headers=jwt_headers).json()["result"] == "PASS"
     assert client.get("/api/integrity/status", headers=jwt_headers).json()["status"] == "green"
-
-
-def test_demo_tamper_bad_seq_is_400(live, client, jwt_headers):
-    assert client.post("/api/demo/tamper", json={"seq_id": 999}, headers=jwt_headers).status_code == 400
+    with live.begin() as c:  # attacker edits the (temporary test) database directly
+        c.execute(text("UPDATE security_logs SET message='edited' WHERE seq_id=2"))
+    assert client.post("/api/verify", headers=jwt_headers).json()["result"] == "FAIL"
+    assert client.get("/api/integrity/status", headers=jwt_headers).json()["status"] == "red"
 
 
 def test_telegram_alert_real_path_uses_api_and_never_leaks_token(capsys):

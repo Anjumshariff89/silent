@@ -54,6 +54,6 @@ class AppContext:
     settings: Settings
     engine: Engine
     alerter: Alerter
-    anchorer: Any = None  # SimulatedChain | QuaiServiceAnchorer
+    anchorer: Any = None  # QuaiServiceAnchorer (REAL) | UnconfiguredAnchorer (no Quai keys)
     hub: LiveHub = field(default_factory=LiveHub)
     chain_lock: threading.Lock = field(default_factory=threading.Lock)

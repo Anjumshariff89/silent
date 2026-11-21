@@ -33,7 +33,8 @@ def test_anchoring_works_on_upgraded_old_database(tmp_path):
     from fastapi.testclient import TestClient
     from tests.conftest import TEST_API_KEY, sample_event
     _old_schema_db(tmp_path / "test.db")
-    with TestClient(create_app(make_settings(tmp_path), run_monitor=False)) as c:
+    from tests.conftest import with_fake_chain
+    with TestClient(with_fake_chain(create_app(make_settings(tmp_path), run_monitor=False), tmp_path)) as c:
         h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": TEST_API_KEY}).json()["access_token"]}
         for i in range(3):
             c.post("/api/logs/ingest", json=sample_event(i), headers={"X-API-Key": TEST_API_KEY})

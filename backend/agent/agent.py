@@ -18,7 +18,9 @@ from urllib.parse import urlparse
 
 import httpx
 
-from backend.agent.collector import make_collector
+import sys
+
+from backend.agent.collector import CollectorUnavailable, make_collector
 from backend.app.config import load_settings
 
 AGENT_VERSION = "0.1.0"
@@ -93,12 +95,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Tamper-evident log agent")
     ap.add_argument("--server", default=os.getenv("AGENT_SERVER_URL", "http://127.0.0.1:8000"))
     ap.add_argument("--agent-id", default=os.getenv("AGENT_ID", "agent-win-01"))
-    ap.add_argument("--collector", choices=["auto", "windows", "simulator"], default="auto")
+    ap.add_argument("--collector", choices=["auto", "windows"], default="auto")
     ap.add_argument("--ca-bundle", default=None, help="CA file for a self-signed server certificate")
     ap.add_argument("--poll", type=float, default=3.0)
     args = ap.parse_args()
     settings = load_settings()
-    collector = make_collector(args.collector)
+    try:
+        collector = make_collector(args.collector)
+    except CollectorUnavailable as exc:
+        print(f"[agent] not started: {exc}. No events are collected on this machine; "
+              "send logs through POST /api/logs/ingest (e.g. scripts/seed_logs.py).", flush=True)
+        sys.exit(3)
     agent = LogAgent(args.server, settings.api_key, args.agent_id, collector, ca_bundle=args.ca_bundle or True)
     try:
         agent.run(poll_interval=args.poll)

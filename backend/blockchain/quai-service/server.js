@@ -20,28 +20,35 @@ function makeProvider(rpcUrl) {
 }
 
 function build() {
-  const { RPC_URL, CYPRUS1_PK, CHAIN_ID, CONTRACT_ADDRESS } = process.env;
+  const { RPC_URL, CYPRUS1_PK, CHAIN_ID, CONTRACT_ADDRESS, QUAI_RPC_TIMEOUT_MS } = process.env;
   const config = {
     chainId: BigInt(CHAIN_ID || 15000),
     contractAddress: CONTRACT_ADDRESS || "",
     allowBroadcast: process.argv.includes("--allow-broadcast"),
-    real: Boolean(RPC_URL && CYPRUS1_PK && CONTRACT_ADDRESS),
+    rpcConfigured: Boolean(RPC_URL),            // enough for live status: chain id + latest block
+    real: Boolean(RPC_URL && CYPRUS1_PK && CONTRACT_ADDRESS),  // needed to anchor
+    rpcTimeoutMs: Number(QUAI_RPC_TIMEOUT_MS || 10000),
   };
-  if (!config.real) return { config, getZone: quais.getZoneForAddress, shard: quais.Shard.Cyprus1 };
   const abi = JSON.parse(fs.readFileSync(path.join(__dirname, "LogAnchor.abi.json"), "utf8"));
-  const provider = makeProvider(RPC_URL);
-  const wallet = new quais.Wallet(CYPRUS1_PK, provider);
-  const contract = new quais.Contract(CONTRACT_ADDRESS, abi, wallet);
-  return { config, provider, wallet, contract, getZone: quais.getZoneForAddress, shard: quais.Shard.Cyprus1 };
+  // Wallet object built once (the key stays inside it); each connect() binds it to a fresh provider.
+  const baseWallet = CYPRUS1_PK ? new quais.Wallet(CYPRUS1_PK) : null;
+  const connect = RPC_URL ? () => {
+    const provider = makeProvider(RPC_URL);
+    const wallet = baseWallet ? baseWallet.connect(provider) : null;
+    const contract = CONTRACT_ADDRESS ? new quais.Contract(CONTRACT_ADDRESS, abi, wallet || provider) : null;
+    return { provider, wallet, contract };
+  } : () => ({ provider: null, wallet: baseWallet, contract: null });
+  return { config, connect, walletAddress: baseWallet ? baseWallet.address : null,
+    getZone: quais.getZoneForAddress, shard: quais.Shard.Cyprus1 };
 }
 
 if (require.main === module) {
   const deps = build();
   const server = http.createServer(createListener(createHandlers(deps)));
   server.listen(PORT, HOST, () => {
-    console.log(`[quai-service] listening on http://${HOST}:${PORT} mode=${deps.config.real ? "REAL" : "SIMULATED"} ` +
+    console.log(`[quai-service] listening on http://${HOST}:${PORT} mode=${deps.config.real ? "REAL" : deps.config.rpcConfigured ? "READ-ONLY" : "NOT CONFIGURED"} ` +
       `chain=${deps.config.chainId} broadcast_allowed=${deps.config.allowBroadcast}` +
-      (deps.wallet ? ` wallet=${deps.wallet.address}` : ""));
+      (deps.walletAddress ? ` wallet=${deps.walletAddress}` : ""));
   });
 }
 

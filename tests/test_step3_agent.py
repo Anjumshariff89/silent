@@ -1,4 +1,4 @@
-"""Step 3: collector simulator, fallback, HTTPS enforcement, append-only agent."""
+"""Step 3: real Windows collector only (no synthetic fallback), HTTPS enforcement, append-only agent."""
 import ast
 import builtins
 import json
@@ -15,17 +15,18 @@ AGENT_DIR = Path(__file__).resolve().parents[1] / "backend" / "agent"
 REQUIRED = {"event_id", "event_type", "severity", "source_host", "username", "source_ip", "message", "event_time"}
 
 
-def test_simulator_events_have_contract_fields_and_monitored_ids():
-    events = col.SimulatorCollector(seed=1).collect(10)
-    assert events
-    for e in events:
-        assert set(e) == REQUIRED
-        assert e["event_id"] in (4624, 4634, 4672, 4673)
-        assert e["username"].startswith("synthetic.")
-        assert e["source_ip"].startswith("10.0.0.")
+class _OneEventCollector:
+    """Test double standing in for the Windows collector (the agent code under test is unchanged)."""
+    mode = "windows"
+    hostname = "WIN-TEST-01"
+
+    def collect(self, max_events=10):
+        return [{"event_id": 4624, "event_type": "logon", "severity": "info", "source_host": self.hostname,
+                 "username": "test.user", "source_ip": "10.0.0.5", "message": "test event",
+                 "event_time": "2026-11-21T10:00:00Z"}]
 
 
-def test_fallback_when_pywin32_missing(monkeypatch, capsys):
+def test_no_synthetic_fallback_when_pywin32_missing(monkeypatch):
     real_import = builtins.__import__
 
     def fake_import(name, *a, **k):
@@ -35,9 +36,22 @@ def test_fallback_when_pywin32_missing(monkeypatch, capsys):
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert col.windows_collector_available() is False
-    c = col.make_collector("windows")
-    assert isinstance(c, col.SimulatorCollector) and c.mode == "simulator"
-    assert "falling back to simulator" in capsys.readouterr().out
+    with pytest.raises(col.CollectorUnavailable, match="Windows"):
+        col.make_collector("windows")
+    assert not hasattr(col, "SimulatorCollector")  # the synthetic generator is gone
+
+
+def test_agent_exits_with_clear_message_when_no_windows_log(monkeypatch, capsys):
+    import sys
+    from backend.agent import agent as agent_mod
+    monkeypatch.setattr(sys, "argv", ["agent"])
+    monkeypatch.setattr(agent_mod, "make_collector",
+                        lambda prefer="auto": (_ for _ in ()).throw(col.CollectorUnavailable("not Windows")))
+    with pytest.raises(SystemExit) as e:
+        agent_mod.main()
+    assert e.value.code == 3
+    out = capsys.readouterr().out
+    assert "not started: not Windows" in out and "/api/logs/ingest" in out
 
 
 def test_https_required_for_remote_hosts():
@@ -66,8 +80,8 @@ def test_agent_sends_events_and_heartbeats_with_api_key():
     srv = HTTPServer(("127.0.0.1", 0), _Recorder)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        agent = LogAgent(f"http://127.0.0.1:{srv.server_port}", "k-test", "agent-t", col.SimulatorCollector(seed=2))
-        agent.send_event(col.SimulatorCollector(seed=3).collect(1)[0])
+        agent = LogAgent(f"http://127.0.0.1:{srv.server_port}", "k-test", "agent-t", _OneEventCollector())
+        agent.send_event(_OneEventCollector().collect(1)[0])
         agent.send_heartbeat()
     finally:
         srv.shutdown()

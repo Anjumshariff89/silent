@@ -1,4 +1,5 @@
-export type Badge = "REAL" | "SIMULATED";
+/** Integration status from /api/health (no simulated modes). */
+export type Badge = "REAL" | "READ-ONLY" | "NOT CONFIGURED" | "SQLITE" | "SUPABASE" | "CONSOLE" | "UNAVAILABLE";
 
 export interface Health {
   status: string;
@@ -150,6 +151,7 @@ export interface BlockchainStatus {
   contract_address: string | null;
   anchor_wallet: string | null;
   latest_block: number | null;
+  rpc_error?: string | null;
   anchored_batches: number;
   last_anchor: { batch_id: number; tx_hash: string; block_number: number; explorer_url: string | null } | null;
 }

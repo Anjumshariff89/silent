@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 EXPECTED_ENV_LINES = [
-    "MODE=simulator",
+    "MODE=real",
     "API_KEY=",
     "JWT_SECRET=",
     "DATABASE_URL=sqlite:///./local.db",
@@ -16,6 +16,9 @@ EXPECTED_ENV_LINES = [
     "CONTRACT_ADDRESS=",
     "TELEGRAM_BOT_TOKEN=",
     "TELEGRAM_CHAT_ID=",
+    "SUPABASE_URL=",
+    "SUPABASE_JWT_SECRET=",
+    "FRONTEND_ORIGIN=",
 ]
 
 CONTRACT_ENDPOINTS = [
@@ -37,6 +40,13 @@ CONTRACT_ENDPOINTS = [
     "GET /api/evidence/{batch_id}/json",
     "GET /api/evidence/{batch_id}/pdf",
     "WebSocket /ws/live",
+    "GET /health",
+    "POST /logs",
+    "GET /logs`",
+    "GET /verify",
+    "POST /merkle/build",
+    "POST /anchor",
+    "GET /anchors",
 ]
 
 
@@ -47,7 +57,7 @@ def test_folder_structure():
     assert (ROOT / "backend" / "blockchain" / "quai-service").is_dir()
     for d in ["frontend", "smart-contracts", "tests", "documentation"]:
         assert (ROOT / d).is_dir(), d
-    for f in [".env.example", ".gitignore", "requirements.txt", "README.md", "start.ps1", "PROJECT_STATE.md"]:
+    for f in [".env.example", ".gitignore", "requirements.txt", "README.md", "start.ps1", "run-dev.ps1", "PROJECT_STATE.md"]:
         assert (ROOT / f).is_file(), f
 
 

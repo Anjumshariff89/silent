@@ -1,14 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { useApi, useLive } from "@/lib/hooks";
 import type { ChainLink } from "@/lib/types";
-import { TamperButton } from "@/components/TamperButton";
 import { Card, Empty, ErrorState, Hash, Loading } from "@/components/ui";
 
 export default function ChainPage() {
   const live = useLive();
-  const [msg, setMsg] = useState<string | null>(null);
   const chain = useApi<{ genesis_prev_hash: string; links: ChainLink[] }>("/api/chain?limit=24",
     { refreshKey: live.last?.type === "log" ? live.counter : 0 });
   return (
@@ -18,7 +15,6 @@ export default function ChainPage() {
         Each block stores <code>curr_hash = SHA-256(prev_hash ‖ log)</code>. The first log links to the genesis value 0×64.
         Green = hash recomputes and links to its predecessor.
       </p>
-      {msg && <div className="rounded border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-200" data-testid="tamper-notice">{msg}</div>}
       <Card title="Most recent links">
         {chain.error ? <ErrorState message={chain.error} onRetry={chain.reload} /> : chain.loading && !chain.data ? <Loading /> :
           !chain.data?.links.length ? <Empty>No logs yet.</Empty> : (
@@ -33,8 +29,6 @@ export default function ChainPage() {
                     <div className="mt-1 text-soc-muted">prev <Hash value={l.prev_hash} n={10} /></div>
                     <div className="text-soc-muted">curr <Hash value={l.curr_hash} n={10} /></div>
                     {!ok && <div className="mt-1 text-red-300">{!l.hash_valid ? "hash mismatch" : "broken link"}</div>}
-                    <div className="mt-1"><TamperButton seqId={l.seq_id} onDone={(r) =>
-                      setMsg(`${r.attack}: sandbox verification ${r.verification.result} — ${r.verification.issues.map((x) => `${x.type} @ seq ${x.seq_id}`).join(", ")}`)} /></div>
                   </div>
                 </div>
               );

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useApi, useLive } from "@/lib/hooks";
 import type { Page, SecurityLog } from "@/lib/types";
-import { TamperButton } from "@/components/TamperButton";
 import { Card, Empty, ErrorState, fmtTime, Hash, Loading, Pill } from "@/components/ui";
 
 const PAGE_SIZE = 25;
@@ -15,7 +14,6 @@ export default function LogsPage() {
   const [severity, setSeverity] = useState("");
   const [agent, setAgent] = useState("");
   const [page, setPage] = useState(1);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const path = useMemo(() => {
     const p = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
@@ -54,21 +52,17 @@ export default function LogsPage() {
           <input className="input w-40" placeholder="Agent ID" value={agent} onChange={(e) => { setAgent(e.target.value); setPage(1); }} />
           <button className="btn-secondary" onClick={exportJson} disabled={!logs.data?.items.length}>Export JSON</button>
         </div>
-        {notice && <div className="mb-3 rounded border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-200" data-testid="tamper-notice">{notice}</div>}
         {logs.error ? <ErrorState message={logs.error} onRetry={logs.reload} /> : logs.loading && !logs.data ? <Loading /> :
           !logs.data?.items.length ? <Empty>No logs match these filters.</Empty> : (
           <div className="overflow-x-auto">
             <table className="tbl">
-              <thead><tr><th>Seq</th><th>Time</th><th>Agent</th><th>Event</th><th>Severity</th><th>User</th><th>Source IP</th><th>Message</th><th>Hash</th><th>Demo</th></tr></thead>
+              <thead><tr><th>Seq</th><th>Time</th><th>Agent</th><th>Event</th><th>Severity</th><th>User</th><th>Source IP</th><th>Message</th><th>Hash</th></tr></thead>
               <tbody>{logs.data.items.map((l) => (
                 <tr key={l.seq_id}>
                   <td className="font-mono">{l.seq_id}</td><td className="whitespace-nowrap text-xs">{fmtTime(l.event_time)}</td>
                   <td className="whitespace-nowrap">{l.agent_id}</td><td className="whitespace-nowrap">{l.event_id} <span className="text-soc-muted">{l.event_type}</span></td>
                   <td><Pill value={l.severity} /></td><td>{l.username ?? "—"}</td><td className="font-mono text-xs">{l.source_ip ?? "—"}</td>
                   <td className="max-w-[14rem] truncate" title={l.message}>{l.message}</td><td><Hash value={l.curr_hash} /></td>
-                  <td className="whitespace-nowrap"><TamperButton seqId={l.seq_id} onDone={(r) => setNotice(
-                    `${r.attack} → verification ${r.verification.result} (${r.verification.issues.map((i) => `${i.type} @ ${i.seq_id}`).join(", ")}). ` +
-                    `Original data unchanged: ${r.original_unchanged}.`)} /></td>
                 </tr>
               ))}</tbody>
             </table>

@@ -1,7 +1,7 @@
 """Central configuration.
 
 Keys are loaded from `.env` with python-dotenv. Key *values* are never logged, printed or
-returned by any endpoint: only whether each integration is REAL or SIMULATED.
+returned by any endpoint: only whether each integration is REAL or which fallback it uses (NOT CONFIGURED/SQLITE/CONSOLE/UNAVAILABLE).
 """
 from __future__ import annotations
 
@@ -37,16 +37,30 @@ class Settings:
     chain_id: int = 15000
     telegram_bot_token: str = field(default="", repr=False)
     telegram_chat_id: str = field(default="", repr=False)
+    # Supabase Auth (dashboard users). The backend only VERIFIES access tokens; it never needs the service key.
+    supabase_url: str = ""
+    supabase_jwt_secret: str = field(default="", repr=False)
+    frontend_origin: str = ""  # extra CORS origin(s), comma-separated
     # Optional tuning (not secrets, not in .env.example; sensible defaults).
     heartbeat_online_s: float = 20.0
     heartbeat_offline_s: float = 60.0
     monitor_interval_s: float = 5.0
     using_dev_api_key: bool = False
 
-    # ---- integration modes (drive REAL/SIMULATED badges) ----
+    # ---- integration modes (drive the dashboard badges) ----
     @property
     def blockchain_real(self) -> bool:
         return bool(self.rpc_url and self.cyprus1_pk and self.contract_address)
+
+    @property
+    def supabase_auth(self) -> bool:
+        """Dashboard sign-in through Supabase Auth instead of the local admin/API_KEY login."""
+        return bool(self.supabase_url or self.supabase_jwt_secret)
+
+    @property
+    def cors_origins(self) -> list[str]:
+        extra = [o.strip().rstrip("/") for o in self.frontend_origin.split(",") if o.strip()]
+        return list(dict.fromkeys(["http://localhost:3000", "http://127.0.0.1:3000", *extra]))
 
     @property
     def database_real(self) -> bool:
@@ -57,16 +71,20 @@ class Settings:
         return bool(self.telegram_bot_token and self.telegram_chat_id)
 
     def integration_modes(self) -> dict[str, str]:
+        """Truthful status per integration (no simulated modes).
+
+        blockchain: REAL | READ-ONLY | NOT CONFIGURED   database: SUPABASE | SQLITE
+        telegram:   REAL | CONSOLE          windows_event_log: REAL | UNAVAILABLE
+        auth:       SUPABASE | LOCAL
+        """
         from backend.agent.collector import windows_collector_available  # local import: avoid cycle
 
-        def badge(flag: bool) -> str:
-            return "REAL" if flag else "SIMULATED"
-
         return {
-            "blockchain": badge(self.blockchain_real),
-            "database": badge(self.database_real),
-            "telegram": badge(self.telegram_real),
-            "windows_event_log": badge(windows_collector_available()),
+            "blockchain": "REAL" if self.blockchain_real else "READ-ONLY" if self.rpc_url else "NOT CONFIGURED",
+            "database": "SUPABASE" if self.database_real else "SQLITE",
+            "telegram": "REAL" if self.telegram_real else "CONSOLE",
+            "windows_event_log": "REAL" if windows_collector_available() else "UNAVAILABLE",
+            "auth": "SUPABASE" if self.supabase_auth else "LOCAL",
         }
 
 
@@ -97,6 +115,9 @@ def load_settings(env_file: str | os.PathLike | None = None) -> Settings:
         chain_id=int(_env("CHAIN_ID", "15000")),
         telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
+        supabase_url=_env("SUPABASE_URL").rstrip("/"),
+        supabase_jwt_secret=_env("SUPABASE_JWT_SECRET"),
+        frontend_origin=_env("FRONTEND_ORIGIN"),
         heartbeat_online_s=float(_env("HEARTBEAT_ONLINE_SECONDS", "20")),
         heartbeat_offline_s=float(_env("HEARTBEAT_OFFLINE_SECONDS", "60")),
         monitor_interval_s=float(_env("MONITOR_INTERVAL_SECONDS", "5")),

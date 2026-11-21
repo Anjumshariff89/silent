@@ -1,7 +1,6 @@
-import { mockRequest } from "./mock";
+import { supabase } from "./supabase";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
 const TOKEN_KEY = "lace_token";
 
 export class ApiError extends Error {
@@ -28,6 +27,26 @@ export function setToken(token: string | null): void {
   }
 }
 
+/** Current access token: the Supabase session's (refreshed automatically when expired) or the local admin token. */
+export async function accessToken(): Promise<string | null> {
+  const sb = supabase();
+  if (!sb) return getToken();
+  const { data } = await sb.auth.getSession();
+  const token = data.session?.access_token ?? null;
+  setToken(token);
+  return token;
+}
+
+export async function hasSession(): Promise<boolean> {
+  return Boolean(await accessToken());
+}
+
+export async function signOut(): Promise<void> {
+  const sb = supabase();
+  if (sb) await sb.auth.signOut();
+  setToken(null);
+}
+
 function detailOf(body: unknown, fallback: string): string {
   if (body && typeof body === "object" && "detail" in body) {
     const d = (body as { detail: unknown }).detail;
@@ -38,9 +57,8 @@ function detailOf(body: unknown, fallback: string): string {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (USE_MOCK) return mockRequest<T>(path, init);
   const headers = new Headers(init.headers);
-  const token = getToken();
+  const token = await accessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   let res: Response;
@@ -50,7 +68,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(0, `Cannot reach the API at ${API_URL}. Is the backend running?`);
   }
   if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/api/auth")) {
-    setToken(null);
+    await signOut();
     if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
   }
   if (!res.ok) {
@@ -70,12 +88,7 @@ export const post = <T,>(path: string, body?: unknown) =>
 
 /** Authenticated file download (JSON/PDF evidence). */
 export async function download(path: string, filename: string): Promise<void> {
-  if (USE_MOCK) {
-    const blob = new Blob([JSON.stringify(await mockRequest(path, {}), null, 2)], { type: "application/json" });
-    triggerDownload(blob, filename);
-    return;
-  }
-  const res = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+  const res = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${(await accessToken()) ?? ""}` } });
   if (!res.ok) throw new ApiError(res.status, `Download failed (HTTP ${res.status})`);
   triggerDownload(await res.blob(), filename);
 }
