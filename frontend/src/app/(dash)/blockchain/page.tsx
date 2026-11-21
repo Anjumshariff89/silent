@@ -33,7 +33,8 @@ export default function BlockchainPage() {
             <div><dt className="text-soc-muted">Mode</dt><dd data-testid="chain-mode"><Pill value={s.mode} label={blockchainBadgeLabel(s.mode, s.chain_id)} /></dd></div>
             <div><dt className="text-soc-muted">Chain</dt><dd data-testid="chain-name">{chainName(s.chain_id)}</dd></div>
             <div><dt className="text-soc-muted">Connected</dt><dd><Pill value={s.connected ? "online" : "offline"} label={s.connected ? "yes" : "no"} /></dd></div>
-            <div><dt className="text-soc-muted">Latest block</dt><dd>{s.latest_block ?? "—"}</dd></div>
+            <div><dt className="text-soc-muted">Latest block</dt><dd data-testid="latest-block">{s.latest_block ?? "—"}</dd></div>
+            {s.rpc_error && <div className="col-span-2 sm:col-span-4"><dt className="text-soc-muted">RPC error</dt><dd data-testid="rpc-error" className="text-xs text-amber-200">{s.rpc_error}</dd></div>}
             <div className="col-span-2"><dt className="text-soc-muted">Contract</dt><dd>{s.contract_address ? (
               explorerAddress(s.chain_id, s.contract_address)
                 ? <a className="font-mono text-xs text-sky-400 underline" target="_blank" rel="noreferrer" href={explorerAddress(s.chain_id, s.contract_address)!}>{s.contract_address} ↗</a>

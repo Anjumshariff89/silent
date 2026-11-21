@@ -107,3 +107,63 @@ test("HTTP listener: routes, JSON errors, body limit", async () => {
     assert.equal((await fetch(`${base}/nope`)).status, 404);
   } finally { srv.close(); }
 });
+
+// ---- live status without a wallet/contract, real errors, timeout, reconnect ----
+function readOnly(provider, extra = {}) {
+  let connects = 0;
+  const h = createHandlers({
+    config: { chainId: 15000n, contractAddress: "", allowBroadcast: false, rpcConfigured: true, real: false, rpcTimeoutMs: 50, ...extra },
+    connect: () => { connects++; return { provider: provider(connects), wallet: null, contract: null }; },
+    getZone: (a) => a.slice(0, 4).toLowerCase(), shard: "cyprus1",
+  });
+  return { h, connects: () => connects };
+}
+
+test("READ-ONLY: RPC_URL alone gives verified chain id and latest block, no wallet, anchoring refused", async () => {
+  let shardAsked;
+  const { h } = readOnly(() => ({ getNetwork: async () => ({ chainId: 15000n }),
+    getBlockNumber: async (shard) => { shardAsked = shard; return 8307488n; } }));
+  const s = await h.status();
+  assert.equal(s.mode, "READ-ONLY"); assert.equal(s.connected, true); assert.equal(s.rpc_chain_id, 15000);
+  assert.equal(s.latest_block, 8307488); assert.equal(shardAsked, "cyprus1"); assert.equal(s.rpc_error, null);
+  assert.equal(s.wallet_address, null); assert.deepEqual(s.missing_for_anchoring, ["CYPRUS1_PK", "CONTRACT_ADDRESS"]);
+  await assert.rejects(h.getAnchor("1"), { status: 503, message: /CONTRACT_ADDRESS not set/ });
+});
+
+test("unreachable RPC: real error text, not connected, no block number", async () => {
+  const { h } = readOnly(() => ({ getNetwork: async () => { throw Object.assign(new Error("x"), { shortMessage: "getaddrinfo ENOTFOUND bad.host" }); } }));
+  const s = await h.status();
+  assert.equal(s.connected, false); assert.equal(s.latest_block, null); assert.equal(s.rpc_chain_id, null);
+  assert.match(s.rpc_error, /RPC unreachable: getaddrinfo ENOTFOUND bad\.host/);
+});
+
+test("hung RPC times out and the next request uses a fresh provider (reconnect)", async () => {
+  const { h, connects } = readOnly((n) => n === 1
+    ? { getNetwork: () => new Promise(() => {}), destroy() {} }
+    : { getNetwork: async () => ({ chainId: 15000n }), getBlockNumber: async () => 5n });
+  const first = await h.status();
+  assert.equal(first.connected, false); assert.match(first.rpc_error, /timed out after 50 ms/);
+  const second = await h.status();
+  assert.equal(connects(), 2); assert.equal(second.connected, true); assert.equal(second.latest_block, 5);
+});
+
+test("wrong network: reports the RPC's chain id and is not connected", async () => {
+  const { h } = readOnly(() => ({ getNetwork: async () => ({ chainId: 9n }), getBlockNumber: async () => 1n }));
+  const s = await h.status();
+  assert.equal(s.connected, false); assert.equal(s.rpc_chain_id, 9); assert.equal(s.latest_block, null);
+  assert.match(s.rpc_error, /chain 9, expected CHAIN_ID 15000/);
+});
+
+test("no RPC_URL: NOT CONFIGURED with the reason", async () => {
+  const h = createHandlers({ config: { chainId: 15000n, contractAddress: "", rpcConfigured: false, real: false },
+    connect: () => ({ provider: null, wallet: null, contract: null }), getZone: () => "0x00" });
+  const s = await h.status();
+  assert.equal(s.mode, "NOT CONFIGURED"); assert.equal(s.connected, false); assert.match(s.rpc_error, /RPC_URL is not set/);
+});
+
+test("quais 'could not coalesce error' is unwrapped to the real transport error", async () => {
+  const { h } = readOnly(() => ({ getNetwork: async () => {
+    throw Object.assign(new Error("could not coalesce error (...)"), { shortMessage: "could not coalesce error",
+      error: { code: -32000, message: "getaddrinfo ENOTFOUND orchard.rpc.example" } }); } }));
+  assert.equal((await h.status()).rpc_error, "RPC unreachable: getaddrinfo ENOTFOUND orchard.rpc.example");
+});

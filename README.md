@@ -89,8 +89,11 @@ Use a **throwaway testnet wallet only**, never one holding real funds.
 6. **Run with anchoring enabled:** `.\run-dev.ps1 -AllowBroadcast`. The badge shows **Quai Orchard (REAL)**.
    Anchors link to `https://orchard.quaiscan.io/tx/…`, and `POST /api/proof/verify` reads the root back from the
    contract (`getAnchor(onchain_batch_id)`). Without `-AllowBroadcast` the quai-service is read-only and anchoring
-   returns 403. Without `RPC_URL`/`CYPRUS1_PK`/`CONTRACT_ADDRESS` the badge shows **NOT CONFIGURED** and
-   `POST /api/anchor` returns 503 with the reason; if the RPC is unreachable it returns 502/503 and the batch stays
+   returns 403. With only `RPC_URL` set (the public endpoint needs **no API key**) the badge shows
+   **Quai Orchard (READ-ONLY)**: `/status` reports the live, verified chain ID and Cyprus-1 latest block, and anchoring
+   returns 503 naming the missing settings. Without `RPC_URL` the badge shows **NOT CONFIGURED**. If the RPC fails,
+   `/status` shows `connected: false` with the real error in `rpc_error` (10 s timeout, fresh connection on the next
+   request); if the RPC is unreachable it returns 502/503 and the batch stays
    unanchored (nothing is faked). Anchored batches show the tx hash with a **Verify** button (reads the root back).
 
 Notes (details in [`documentation/QUAI_COMPATIBILITY.md`](documentation/QUAI_COMPATIBILITY.md)):

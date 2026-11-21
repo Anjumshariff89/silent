@@ -59,13 +59,13 @@ class Settings:
     def integration_modes(self) -> dict[str, str]:
         """Truthful status per integration (no simulated modes).
 
-        blockchain: REAL | NOT CONFIGURED   database: SUPABASE | SQLITE
+        blockchain: REAL | READ-ONLY | NOT CONFIGURED   database: SUPABASE | SQLITE
         telegram:   REAL | CONSOLE          windows_event_log: REAL | UNAVAILABLE
         """
         from backend.agent.collector import windows_collector_available  # local import: avoid cycle
 
         return {
-            "blockchain": "REAL" if self.blockchain_real else "NOT CONFIGURED",
+            "blockchain": "REAL" if self.blockchain_real else "READ-ONLY" if self.rpc_url else "NOT CONFIGURED",
             "database": "SUPABASE" if self.database_real else "SQLITE",
             "telegram": "REAL" if self.telegram_real else "CONSOLE",
             "windows_event_log": "REAL" if windows_collector_available() else "UNAVAILABLE",

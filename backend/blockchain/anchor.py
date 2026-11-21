@@ -46,7 +46,7 @@ def _iso(ts: int | float) -> str:
 
 
 class UnconfiguredAnchorer:
-    """Used when RPC_URL, CYPRUS1_PK or CONTRACT_ADDRESS is missing. Nothing is simulated: anchoring and on-chain
+    """Used when RPC_URL is missing. Nothing is simulated: anchoring and on-chain
     reads fail with a clear message (HTTP 503) until the Quai keys are set in .env."""
 
     mode = "NOT CONFIGURED"
@@ -72,6 +72,9 @@ class UnconfiguredAnchorer:
 
     def find_anchor_tx(self, batch_id: int) -> dict | None:
         return None
+
+    def rpc_error(self) -> str:
+        return "RPC_URL is not set in .env"
 
 
 class QuaiServiceAnchorer:
@@ -116,7 +119,12 @@ class QuaiServiceAnchorer:
 
     def connected(self) -> bool:
         st = self.status()
-        return bool(st and st.get("mode") == "REAL" and st.get("connected") and st.get("chain_id") == self.chain_id)
+        # connected only when the quai-service verified the RPC's chain id itself
+        return bool(st and st.get("mode") == self.mode and st.get("connected") and st.get("rpc_chain_id") == self.chain_id)
+
+    def rpc_error(self) -> str | None:
+        st = self.status()
+        return st.get("rpc_error") if st else f"quai-service unreachable at {self.base_url}"
 
     def latest_block(self) -> int | None:
         st = self.status()
@@ -150,11 +158,37 @@ class QuaiServiceAnchorer:
                 "block_timestamp": d["block_timestamp"]}
 
 
+class ReadOnlyQuaiAnchorer(QuaiServiceAnchorer):
+    """RPC_URL set but no wallet key and/or contract: live network status from the quai-service, no anchoring."""
+
+    mode = "READ-ONLY"
+
+    def __init__(self, missing: list[str], *a, **kw):
+        super().__init__(*a, **kw)
+        self.missing = missing
+
+    def anchor(self, root_hex: str, batch_id: int) -> dict:
+        raise AnchorError(f"Quai is connected read-only: set {', '.join(self.missing)} in .env to anchor "
+                          "(deploy LogAnchor first for CONTRACT_ADDRESS)")
+
+    def get_anchor(self, batch_id: int) -> dict | None:
+        if not self.contract_address:
+            raise AnchorError("CONTRACT_ADDRESS is not set: there is no contract to read anchors from")
+        return super().get_anchor(batch_id)
+
+    def find_anchor_tx(self, batch_id: int) -> dict | None:
+        return super().find_anchor_tx(batch_id) if self.contract_address else None
+
+
 def make_anchorer(settings, ledger_path: str | Path | None = None):
-    """REAL (quai-service) when RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS are all set, else NOT CONFIGURED.
+    """REAL when RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS are all set; READ-ONLY (live status, no anchoring)
+    when only RPC_URL is set; else NOT CONFIGURED.
 
     Python only checks that the keys are configured; it never reads or forwards CYPRUS1_PK.
     """
     if settings.blockchain_real:
         return QuaiServiceAnchorer(settings.contract_address, settings.chain_id)
+    if settings.rpc_url:
+        missing = [n for n, v in (("CYPRUS1_PK", settings.cyprus1_pk), ("CONTRACT_ADDRESS", settings.contract_address)) if not v]
+        return ReadOnlyQuaiAnchorer(missing, settings.contract_address or None, settings.chain_id)
     return UnconfiguredAnchorer(settings.chain_id)

@@ -158,4 +158,5 @@ def blockchain_status(c: AppContext) -> dict:
                                  " ORDER BY batch_id DESC LIMIT 1")).first()
     return {"mode": a.mode, "chain_id": a.chain_id, "connected": a.connected(), "contract_address": a.contract_address,
             "anchor_wallet": getattr(a, "address", None), "latest_block": a.latest_block(),
+            "rpc_error": a.rpc_error() if hasattr(a, "rpc_error") else None,
             "anchored_batches": count, "last_anchor": dict(last._mapping) if last else None}

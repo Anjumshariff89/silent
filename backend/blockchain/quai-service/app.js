@@ -19,26 +19,78 @@ function iso(seconds) {
   return new Date(Number(seconds) * 1000).toISOString().replace(".000Z", "Z");
 }
 
+function withTimeout(promise, ms, what) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms} ms`)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Most specific error text: quais wraps transport/RPC failures as "could not coalesce error", the cause is inside. */
+function errText(e) {
+  if (!e) return "unknown error";
+  const inner = (e.error && e.error.message) || (e.info && e.info.error && e.info.error.message) || (e.cause && e.cause.message);
+  const outer = e.shortMessage || e.message;
+  return String(inner && (!outer || /coalesce/i.test(outer)) ? inner : outer || e).slice(0, 200);
+}
+
 /**
- * deps: { config: {chainId: bigint, contractAddress, allowBroadcast, real}, provider, wallet, contract, getZone }
- * When NOT CONFIGURED (keys missing) provider/wallet/contract may be null.
+ * deps: { config: {chainId: bigint, contractAddress, allowBroadcast, rpcConfigured, real, rpcTimeoutMs?},
+ *         connect?: () => ({provider, wallet, contract}), provider?, wallet?, contract?, getZone, shard }
+ * connect() builds a fresh RPC connection; it is called lazily and again after a failed RPC check
+ * (quais gives up network detection permanently after a few retries, so a new provider is the reconnect).
+ * Tests may inject provider/wallet/contract directly instead. Any of them is null when its key is not set.
  */
 function createHandlers(deps) {
   const { config } = deps;
+  const timeoutMs = config.rpcTimeoutMs || 10000;
+  let conn = null;
 
-  async function rpcChainId() {
-    try { return (await deps.provider.getNetwork()).chainId; } catch { return null; }
+  function current() {
+    if (conn) return conn;
+    conn = deps.connect ? deps.connect()
+      : { provider: deps.provider || null, wallet: deps.wallet || null, contract: deps.contract || null };
+    return conn;
+  }
+  function reconnectLater() {
+    if (!deps.connect || !conn) return;
+    try { if (conn.provider && conn.provider.destroy) conn.provider.destroy(); } catch { /* ignore */ }
+    conn = null;
+  }
+  const rpc = (promise, what) => withTimeout(promise, timeoutMs, what);
+
+  /** Verified chain id from the RPC, or the real error. Never a made-up value. */
+  async function checkChain() {
+    const { provider } = current();
+    if (!provider) return { chain: null, error: "RPC_URL is not set in .env" };
+    try {
+      return { chain: (await rpc(provider.getNetwork(), "RPC chain id request")).chainId, error: null };
+    } catch (e) {
+      reconnectLater();
+      return { chain: null, error: `RPC unreachable: ${errText(e)}` };
+    }
+  }
+
+  function missing(needWallet) {
+    const m = [];
+    if (!config.rpcConfigured && !current().provider) m.push("RPC_URL");
+    if (needWallet && !current().wallet) m.push("CYPRUS1_PK");
+    if (!config.contractAddress) m.push("CONTRACT_ADDRESS");
+    return m;
   }
 
   async function guards({ needWallet }) {
-    if (!config.real) throw new HttpError(503, "quai-service is NOT CONFIGURED: RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS must be set");
-    const chain = await rpcChainId();
-    if (chain === null) throw new HttpError(503, "Quai RPC unreachable");
+    const m = missing(needWallet);
+    if (m.length) throw new HttpError(503, `quai-service cannot ${needWallet ? "anchor" : "read the contract"}: ${m.join(", ")} not set in .env`);
+    const { chain, error } = await checkChain();
+    if (chain === null) throw new HttpError(503, `Quai ${error}`);
     if (chain !== config.chainId) throw new HttpError(503, `RPC chain ${chain} != configured CHAIN_ID ${config.chainId}; refusing`);
-    if (needWallet && deps.getZone(deps.wallet.address) !== ZONE_CYPRUS1) {
-      throw new HttpError(503, `wallet ${deps.wallet.address} is not a Cyprus-1 (0x00) address`);
+    const { provider, wallet } = current();
+    if (needWallet && deps.getZone(wallet.address) !== ZONE_CYPRUS1) {
+      throw new HttpError(503, `wallet ${wallet.address} is not a Cyprus-1 (0x00) address`);
     }
-    const code = await deps.provider.getCode(config.contractAddress);
+    const code = await rpc(provider.getCode(config.contractAddress), "getCode");
     if (!code || code === "0x") throw new HttpError(503, `no contract code at ${config.contractAddress} on chain ${chain}`);
   }
 
@@ -51,20 +103,29 @@ function createHandlers(deps) {
 
   return {
     async status() {
-      const base = { mode: config.real ? "REAL" : "NOT CONFIGURED", network: "Quai Orchard Cyprus-1",
-        chain_id: Number(config.chainId), broadcast_allowed: !!config.allowBroadcast,
-        contract_address: config.contractAddress || null };
-      if (!config.real) return { ...base, connected: false, rpc_chain_id: null, wallet_address: null, latest_block: null };
-      const chain = await rpcChainId();
-      let latest = null, hasCode = null;
-      if (chain !== null) {
+      // mode = what is configured; connected/rpc_chain_id/latest_block = what the RPC actually answered.
+      const mode = config.real ? "REAL" : (config.rpcConfigured || current().provider) ? "READ-ONLY" : "NOT CONFIGURED";
+      const { wallet } = current();
+      const out = { mode, network: "Quai Orchard Cyprus-1", chain_id: Number(config.chainId),
+        broadcast_allowed: !!config.allowBroadcast, contract_address: config.contractAddress || null,
+        connected: false, rpc_chain_id: null, wallet_address: wallet ? wallet.address : null,
+        wallet_zone: wallet ? deps.getZone(wallet.address) : null, contract_has_code: null, latest_block: null,
+        rpc_error: null, missing_for_anchoring: missing(true) };
+      const { chain, error } = await checkChain();
+      if (chain === null) return { ...out, rpc_error: error };
+      out.rpc_chain_id = Number(chain);
+      if (chain !== config.chainId) return { ...out, rpc_error: `RPC reports chain ${chain}, expected CHAIN_ID ${config.chainId}` };
+      out.connected = true;
+      const { provider } = current();
+      try {
         // explicit zone: with a bare RPC host quais defaults getBlockNumber() to Prime, not Cyprus-1
-        try { latest = Number(await deps.provider.getBlockNumber(deps.shard)); } catch { latest = null; }
-        try { const c = await deps.provider.getCode(config.contractAddress); hasCode = !!c && c !== "0x"; } catch { hasCode = null; }
+        out.latest_block = Number(await rpc(provider.getBlockNumber(deps.shard), "getBlockNumber"));
+      } catch (e) { out.rpc_error = `latest block: ${errText(e)}`; }
+      if (config.contractAddress) {
+        try { const c = await rpc(provider.getCode(config.contractAddress), "getCode"); out.contract_has_code = !!c && c !== "0x"; }
+        catch (e) { out.rpc_error = `contract code: ${errText(e)}`; }
       }
-      return { ...base, connected: chain === config.chainId, rpc_chain_id: chain === null ? null : Number(chain),
-        wallet_address: deps.wallet.address, wallet_zone: deps.getZone(deps.wallet.address),
-        contract_has_code: hasCode, latest_block: latest };
+      return out;
     },
 
     async anchor(body) {
@@ -74,15 +135,16 @@ function createHandlers(deps) {
         throw new HttpError(403, "broadcasting is disabled: start quai-service with --allow-broadcast once the operator approved");
       }
       await guards({ needWallet: true });
-      if (await deps.contract.isAnchored(batchId)) throw new HttpError(409, `batch ${batchId} already anchored`);
+      const { contract } = current();
+      if (await contract.isAnchored(batchId)) throw new HttpError(409, `batch ${batchId} already anchored`);
       const root = "0x" + body.root.replace(/^0x/, "").toLowerCase();
-      const tx = await deps.contract.anchorRoot(root, batchId);
+      const tx = await contract.anchorRoot(root, batchId);
       const receipt = await tx.wait();
       if (!receipt || Number(receipt.status) !== 1) throw new HttpError(502, `anchor transaction failed: ${tx.hash}`);
       let ts = null;
       for (const log of receipt.logs || []) {
         try {
-          const ev = deps.contract.interface.parseLog(log);
+          const ev = contract.interface.parseLog(log);
           if (ev && ev.name === "RootAnchored") ts = ev.args.timestamp;
         } catch { /* not our event */ }
       }
@@ -93,7 +155,7 @@ function createHandlers(deps) {
     async getAnchor(batchIdStr) {
       const batchId = parseBatchId(batchIdStr);
       await guards({ needWallet: false });
-      const [root, timestamp, submitter] = await deps.contract.getAnchor(batchId);
+      const [root, timestamp, submitter] = await rpc(current().contract.getAnchor(batchId), "getAnchor");
       if (BigInt(timestamp) === 0n) throw new HttpError(404, `batch ${batchId} not anchored`);
       return { batch_id: batchId.toString(), root: root.replace(/^0x/, "").toLowerCase(), timestamp: Number(timestamp),
         block_timestamp: iso(timestamp), submitter };
@@ -102,7 +164,8 @@ function createHandlers(deps) {
     async findAnchorTx(batchIdStr) {
       const batchId = parseBatchId(batchIdStr);
       await guards({ needWallet: false });
-      const events = await deps.contract.queryFilter(deps.contract.filters.RootAnchored(batchId));
+      const { contract } = current();
+      const events = await rpc(contract.queryFilter(contract.filters.RootAnchored(batchId)), "queryFilter");
       if (!events.length) throw new HttpError(404, `no RootAnchored event for batch ${batchId}`);
       const ev = events[events.length - 1];
       return { batch_id: batchId.toString(), root: ev.args.root.replace(/^0x/, "").toLowerCase(), tx_hash: ev.transactionHash,
@@ -143,4 +206,4 @@ function createListener(handlers) {
   };
 }
 
-module.exports = { createHandlers, createListener, HttpError, explorerTx };
+module.exports = { createHandlers, createListener, HttpError, explorerTx, withTimeout };

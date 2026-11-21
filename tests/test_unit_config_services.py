@@ -6,6 +6,7 @@ from backend.api.schemas import HeartbeatIn, IngestIn, RangeIn
 from backend.app import config as cfg
 from backend.app.anchor_service import onchain_batch_id
 from backend.app.integrity_service import integrity_status, run_chain_verification
+from backend.blockchain.anchor import AnchorError
 
 
 def _clear(monkeypatch):
@@ -36,7 +37,11 @@ def test_config_badges_turn_real_only_when_all_keys_set(monkeypatch, tmp_path):
     monkeypatch.setenv("RPC_URL", "https://rpc.example")
     monkeypatch.setenv("CYPRUS1_PK", "0x" + "1" * 64)
     s = cfg.load_settings(tmp_path / "x.env")
-    assert s.integration_modes()["blockchain"] == "NOT CONFIGURED"  # contract address still missing
+    assert s.integration_modes()["blockchain"] == "READ-ONLY"  # contract address still missing: live RPC, no anchoring
+    _clear(monkeypatch)
+    assert cfg.load_settings(tmp_path / "x.env").integration_modes()["blockchain"] == "NOT CONFIGURED"  # no RPC_URL
+    monkeypatch.setenv("RPC_URL", "https://rpc.example")
+    monkeypatch.setenv("CYPRUS1_PK", "0x" + "1" * 64)
     monkeypatch.setenv("CONTRACT_ADDRESS", "0x" + "2" * 40)
     monkeypatch.setenv("DATABASE_URL", "postgresql://u@h/db")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
@@ -115,4 +120,25 @@ def test_quai_keys_route_anchoring_through_quai_service(tmp_path):
     with TestClient(app) as c:
         assert c.get("/api/health").json()["integrations"]["blockchain"] == "REAL"
     s2 = make_settings(tmp_path, rpc_url="https://rpc.example", cyprus1_pk="", contract_address="0x" + "2" * 40)
-    assert create_app(s2, run_monitor=False).state.ctx.anchorer.mode == "NOT CONFIGURED"  # partial keys: nothing faked
+    a2 = create_app(s2, run_monitor=False).state.ctx.anchorer
+    assert a2.mode == "READ-ONLY"  # partial keys: live status only, nothing faked
+    with pytest.raises(AnchorError, match="CYPRUS1_PK"):
+        a2.anchor("ab" * 32, 1)
+
+
+def test_read_only_anchorer_reports_quai_service_status_truthfully():
+    """READ-ONLY: connected only when the quai-service verified chain 15000; the real RPC error is passed through."""
+    import httpx
+    from backend.blockchain.anchor import ReadOnlyQuaiAnchorer
+    answers = {"ok": {"mode": "READ-ONLY", "connected": True, "rpc_chain_id": 15000, "latest_block": 8307488, "rpc_error": None},
+               "down": {"mode": "READ-ONLY", "connected": False, "rpc_chain_id": None, "latest_block": None,
+                        "rpc_error": "RPC unreachable: getaddrinfo ENOTFOUND"},
+               "wrong": {"mode": "READ-ONLY", "connected": True, "rpc_chain_id": 9, "latest_block": 1, "rpc_error": None}}
+    for name, st in answers.items():
+        t = httpx.MockTransport(lambda req, st=st: httpx.Response(200, json=st))
+        a = ReadOnlyQuaiAnchorer(["CYPRUS1_PK", "CONTRACT_ADDRESS"], None, 15000, transport=t)
+        assert a.connected() is (name == "ok"), name
+        assert a.latest_block() == st["latest_block"] and a.rpc_error() == st["rpc_error"]
+        assert a.find_anchor_tx(1) is None
+        with pytest.raises(AnchorError, match="CONTRACT_ADDRESS"):
+            a.get_anchor(1)
