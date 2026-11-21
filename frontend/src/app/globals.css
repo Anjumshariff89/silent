@@ -3,14 +3,56 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }
-body { @apply bg-soc-bg text-slate-200 antialiased; }
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply min-h-screen bg-soc-bg font-sans text-slate-200 antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 85% -10%, rgba(56, 189, 248, 0.07), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(16, 185, 129, 0.05), transparent 60%);
+    background-attachment: fixed;
+  }
+  ::selection { @apply bg-sky-500/30 text-white; }
+  :focus-visible { @apply outline-none ring-2 ring-sky-400/70 ring-offset-2 ring-offset-soc-bg; }
+  main h1 { @apply text-2xl font-semibold tracking-tight text-slate-50; }
+  code { @apply font-mono; }
+  /* Wide content (tables, Merkle levels, JSON) scrolls inside its card instead of widening the page. */
+  .grid > * { min-width: 0; }
+  pre { @apply max-w-full overflow-auto; }
+  * { scrollbar-width: thin; scrollbar-color: #26324f transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: #26324f; border-radius: 9999px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
 
 @layer components {
-  .btn-primary { @apply rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50; }
-  .btn-secondary { @apply rounded border border-soc-border px-3 py-1.5 text-sm text-slate-200 hover:bg-white/5 disabled:opacity-50; }
-  .btn-danger { @apply rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50; }
-  .input { @apply rounded border border-soc-border bg-soc-bg px-2 py-1.5 text-sm text-slate-200 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none; }
-  .tbl { @apply w-full text-left text-sm; }
-  .tbl th { @apply whitespace-nowrap border-b border-soc-border px-2 py-2 text-xs font-medium uppercase tracking-wide text-soc-muted; }
-  .tbl td { @apply border-b border-soc-border/60 px-2 py-1.5 align-top; }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-sky-500 to-sky-600 px-3.5 py-2 text-sm font-medium text-white
+      shadow-[0_1px_0_0_rgba(255,255,255,0.15)_inset,0_6px_16px_-8px_rgba(14,165,233,0.8)] transition
+      hover:from-sky-400 hover:to-sky-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-soc-border bg-white/[0.02] px-3.5 py-2 text-sm text-slate-200 transition
+      hover:border-slate-600 hover:bg-white/[0.06] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-red-500 active:scale-[0.98] disabled:opacity-50;
+  }
+  .input {
+    @apply rounded-lg border border-soc-border bg-black/20 px-3 py-2 text-sm text-slate-100 transition placeholder:text-slate-500
+      hover:border-slate-600 focus:border-sky-500 focus:bg-black/30 focus:outline-none focus:ring-2 focus:ring-sky-500/25;
+  }
+  .tbl { @apply w-full border-separate border-spacing-0 text-left text-sm tabular-nums; }
+  .tbl th {
+    @apply sticky top-0 z-[1] whitespace-nowrap border-b border-soc-border bg-soc-panel/95 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-soc-muted backdrop-blur;
+  }
+  .tbl td { @apply whitespace-nowrap border-b border-soc-border/50 px-3 py-2.5 align-middle; }
+  .tbl tbody tr { @apply transition-colors hover:bg-white/[0.025]; }
+  .tbl tbody tr:last-child td { @apply border-b-0; }
+  .nav-section { @apply px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

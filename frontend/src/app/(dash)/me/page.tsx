@@ -5,6 +5,7 @@ import Link from "next/link";
 import { post } from "@/lib/api";
 import { useApi } from "@/lib/hooks";
 import type { Agent, MerkleRootItem, Page, UserAnchor, UserLog, UserVerify } from "@/lib/types";
+import { IconAnchor, IconLink, IconList, IconTree } from "@/components/icons";
 import { Card, Empty, ErrorState, fmtTime, Hash, Loading, Pill, Stat } from "@/components/ui";
 
 /** Your own tamper-evident log: add entries, see chain status, latest Merkle root and anchor. */
@@ -38,10 +39,10 @@ export default function MyDashboardPage() {
       {note && <p data-testid="me-note" className="text-sm text-emerald-300">{note}</p>}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Total logs" value={logs.data ? logs.data.total : "—"} />
-        <Stat label="Hash chain" value={v ? v.result : verify.error ? "error" : "…"} tone={v ? v.result : undefined} />
-        <Stat label="Latest Merkle root" value={latestRoot ? <Hash value={latestRoot.root} n={10} /> : "none"} />
-        <Stat label="Latest anchor" value={latestAnchor ? <Pill value={latestAnchor.status} /> : "none"} />
+        <Stat icon={<IconList size={16} />} label="Total logs" value={logs.data ? logs.data.total : "—"} />
+        <Stat icon={<IconLink size={16} />} label="Hash chain" value={v ? v.result : verify.error ? "error" : "…"} tone={v ? v.result : undefined} />
+        <Stat icon={<IconTree size={16} />} label="Latest Merkle root" value={latestRoot ? <Hash value={latestRoot.root} n={10} /> : "none"} />
+        <Stat icon={<IconAnchor size={16} />} label="Latest anchor" value={latestAnchor ? <Pill value={latestAnchor.status} /> : "none"} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -76,7 +77,7 @@ export default function MyDashboardPage() {
         {logs.error ? <ErrorState message={logs.error} onRetry={logs.reload} /> : logs.loading && !logs.data ? <Loading /> :
           !logs.data?.items.length ? <Empty>No logs yet: add your first entry above.</Empty> : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="me-logs">
+              <table className="tbl" data-testid="me-logs">
                 <thead><tr><th>#</th><th>Message</th><th>Hash</th><th>Prev hash</th><th>Time</th></tr></thead>
                 <tbody>{logs.data.items.map((l) => (
                   <tr key={l.id}><td>{l.seq}</td><td className="max-w-md truncate">{l.message}</td><td><Hash value={l.hash} /></td>

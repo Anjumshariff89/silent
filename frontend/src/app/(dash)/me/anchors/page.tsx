@@ -62,7 +62,7 @@ export default function MyAnchorsPage() {
         {anchors.error ? <ErrorState message={anchors.error} onRetry={anchors.reload} /> : anchors.loading && !anchors.data ? <Loading /> :
           !anchors.data?.items.length ? <Empty>No anchors yet.</Empty> : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="me-anchors">
+              <table className="tbl" data-testid="me-anchors">
                 <thead><tr><th>Merkle root</th><th>Logs</th><th>Transaction</th><th>Chain</th><th>Status</th><th>Updated</th><th>Check</th></tr></thead>
                 <tbody>{anchors.data.items.map((a) => {
                   const chk = checks[a.id];
@@ -72,7 +72,7 @@ export default function MyAnchorsPage() {
                       <td>#{a.from_seq}–#{a.to_seq}</td>
                       <td>{a.tx_hash ? (a.explorer_url
                         ? <a className="font-mono text-xs text-sky-400 underline" href={a.explorer_url} target="_blank" rel="noreferrer">{a.tx_hash.slice(0, 14)}… ↗</a>
-                        : <Hash value={a.tx_hash} />) : <span className="text-soc-muted">{a.error ?? "—"}</span>}</td>
+                        : <Hash value={a.tx_hash} />) : <span className="block max-w-xs whitespace-normal text-xs text-soc-muted">{a.error ?? "—"}</span>}</td>
                       <td>{a.chain_id}</td>
                       <td><Pill value={a.status} /></td>
                       <td>{fmtTime(a.updated_at)}</td>

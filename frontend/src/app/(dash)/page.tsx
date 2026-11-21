@@ -5,6 +5,7 @@ import { useState } from "react";
 import { post } from "@/lib/api";
 import { useApi, useLive } from "@/lib/hooks";
 import type { Agent, BlockchainStatus, IntegrityStatus, Page, SecurityLog, VerifyResult } from "@/lib/types";
+import { IconAnchor, IconBell, IconCpu, IconList, IconShieldCheck } from "@/components/icons";
 import { Card, ErrorState, fmtTime, Hash, Loading, Pill, Stat } from "@/components/ui";
 import { blockchainBadgeLabel, chainName } from "@/lib/quai";
 
@@ -35,11 +36,11 @@ export default function OverviewPage() {
       {verifyErr && <ErrorState message={verifyErr} />}
       {integrity.loading && !integrity.data ? <Loading /> : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label="Integrity" tone={integrity.data?.status} value={integrity.data?.last_result ?? "—"} />
-          <Stat label="Total logs" value={integrity.data?.total_logs ?? "—"} />
-          <Stat label="Agents online" tone={online ? "online" : "offline"} value={`${online}/${agents.data?.items.length ?? 0}`} />
-          <Stat label="Open incidents" tone={integrity.data?.open_incidents ? "red" : "green"} value={integrity.data?.open_incidents ?? "—"} />
-          <Stat label="Anchored batches" value={chain.data?.anchored_batches ?? "—"} />
+          <Stat icon={<IconShieldCheck size={16} />} label="Integrity" tone={integrity.data?.status} value={integrity.data?.last_result ?? "—"} />
+          <Stat icon={<IconList size={16} />} label="Total logs" value={integrity.data?.total_logs ?? "—"} />
+          <Stat icon={<IconCpu size={16} />} label="Agents online" tone={online ? "online" : "offline"} value={`${online}/${agents.data?.items.length ?? 0}`} />
+          <Stat icon={<IconBell size={16} />} label="Open incidents" tone={integrity.data?.open_incidents ? "red" : "green"} value={integrity.data?.open_incidents ?? "—"} />
+          <Stat icon={<IconAnchor size={16} />} label="Anchored batches" value={chain.data?.anchored_batches ?? "—"} />
         </div>
       )}
       <div className="grid gap-6 lg:grid-cols-3">
