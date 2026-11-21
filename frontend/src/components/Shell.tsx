@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getToken, setToken, USE_MOCK } from "@/lib/api";
+import { getToken, setToken } from "@/lib/api";
 import { useApi, useLive } from "@/lib/hooks";
 import type { Health, IntegrityStatus } from "@/lib/types";
 import { blockchainBadgeLabel } from "@/lib/quai";
@@ -35,7 +35,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { intervalMs: 10000, refreshKey: live.last?.type === "integrity" || live.last?.type === "incident" ? live.counter : 0 });
 
   useEffect(() => {
-    if (!USE_MOCK && !getToken()) router.replace("/login");
+    if (!getToken()) router.replace("/login");
     else setReady(true);
   }, [router]);
 
@@ -77,16 +77,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <ModeBadge key={k} name={k.replace("windows_event_log", "winlog")} mode={v}
                 label={k === "blockchain" ? blockchainBadgeLabel(v) : undefined} />
             ))}
-            {USE_MOCK && <span className="rounded bg-fuchsia-500/20 px-1.5 py-0.5 text-[10px] font-bold text-fuchsia-300">MOCK DATA</span>}
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs text-soc-muted">
             <StatusDot status={live.connected ? "online" : "offline"} />
-            {USE_MOCK ? "mock" : live.connected ? "live" : "disconnected"}
+            {live.connected ? "live" : "disconnected"}
           </div>
         </header>
         {health.data?.dev_api_key_in_use && (
           <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs text-amber-200">
-            Simulator mode with the built-in development API key. Set API_KEY and JWT_SECRET in .env before real use.
+            The built-in development API key is in use. Set MODE=real, API_KEY and JWT_SECRET in .env.
           </div>
         )}
         <main className="mx-auto max-w-7xl p-4 md:p-6">{children}</main>

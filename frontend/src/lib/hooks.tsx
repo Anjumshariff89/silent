@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { api, getToken, USE_MOCK, wsUrl } from "./api";
+import { api, getToken, wsUrl } from "./api";
 import type { LiveMessage } from "./types";
 
 export interface Query<T> {
@@ -54,7 +54,7 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
   const retry = useRef(0);
 
   useEffect(() => {
-    if (USE_MOCK || !getToken()) return;
+    if (!getToken()) return;
     let ws: WebSocket | null = null;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;

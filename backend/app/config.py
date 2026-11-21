@@ -1,7 +1,7 @@
 """Central configuration.
 
 Keys are loaded from `.env` with python-dotenv. Key *values* are never logged, printed or
-returned by any endpoint: only whether each integration is REAL or SIMULATED.
+returned by any endpoint: only whether each integration is REAL or which fallback it uses (NOT CONFIGURED/SQLITE/CONSOLE/UNAVAILABLE).
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class Settings:
     monitor_interval_s: float = 5.0
     using_dev_api_key: bool = False
 
-    # ---- integration modes (drive REAL/SIMULATED badges) ----
+    # ---- integration modes (drive the dashboard badges) ----
     @property
     def blockchain_real(self) -> bool:
         return bool(self.rpc_url and self.cyprus1_pk and self.contract_address)
@@ -57,16 +57,18 @@ class Settings:
         return bool(self.telegram_bot_token and self.telegram_chat_id)
 
     def integration_modes(self) -> dict[str, str]:
+        """Truthful status per integration (no simulated modes).
+
+        blockchain: REAL | NOT CONFIGURED   database: SUPABASE | SQLITE
+        telegram:   REAL | CONSOLE          windows_event_log: REAL | UNAVAILABLE
+        """
         from backend.agent.collector import windows_collector_available  # local import: avoid cycle
 
-        def badge(flag: bool) -> str:
-            return "REAL" if flag else "SIMULATED"
-
         return {
-            "blockchain": badge(self.blockchain_real),
-            "database": badge(self.database_real),
-            "telegram": badge(self.telegram_real),
-            "windows_event_log": badge(windows_collector_available()),
+            "blockchain": "REAL" if self.blockchain_real else "NOT CONFIGURED",
+            "database": "SUPABASE" if self.database_real else "SQLITE",
+            "telegram": "REAL" if self.telegram_real else "CONSOLE",
+            "windows_event_log": "REAL" if windows_collector_available() else "UNAVAILABLE",
         }
 
 

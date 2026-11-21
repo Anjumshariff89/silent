@@ -1,7 +1,4 @@
-import { mockRequest } from "./mock";
-
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
 const TOKEN_KEY = "lace_token";
 
 export class ApiError extends Error {
@@ -38,7 +35,6 @@ function detailOf(body: unknown, fallback: string): string {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (USE_MOCK) return mockRequest<T>(path, init);
   const headers = new Headers(init.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -70,11 +66,6 @@ export const post = <T,>(path: string, body?: unknown) =>
 
 /** Authenticated file download (JSON/PDF evidence). */
 export async function download(path: string, filename: string): Promise<void> {
-  if (USE_MOCK) {
-    const blob = new Blob([JSON.stringify(await mockRequest(path, {}), null, 2)], { type: "application/json" });
-    triggerDownload(blob, filename);
-    return;
-  }
   const res = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
   if (!res.ok) throw new ApiError(res.status, `Download failed (HTTP ${res.status})`);
   triggerDownload(await res.blob(), filename);

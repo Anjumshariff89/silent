@@ -1,5 +1,5 @@
-"""Blockchain anchoring: Quai Orchard Cyprus-1 via the local Node.js quai-service (REAL) or a local
-simulated chain (SIMULATED).
+"""Blockchain anchoring: Quai Orchard Cyprus-1 via the local Node.js quai-service (REAL). Without Quai keys the
+anchorer is NOT CONFIGURED and every anchoring call fails clearly (no simulated chain).
 
 Quai is not plain Ethereum (zone-specific addresses, quais SDK), so Python never builds, signs or
 broadcasts Quai transactions and never sees CYPRUS1_PK. It only calls the quai-service over
@@ -7,10 +7,8 @@ loopback HTTP (backend/blockchain/quai-service, default http://127.0.0.1:8787).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,67 +45,32 @@ def _iso(ts: int | float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-class SimulatedChain:
-    """Local stand-in for the LogAnchor contract: a hash-linked JSON ledger of blocks.
+class UnconfiguredAnchorer:
+    """Used when RPC_URL, CYPRUS1_PK or CONTRACT_ADDRESS is missing. Nothing is simulated: anchoring and on-chain
+    reads fail with a clear message (HTTP 503) until the Quai keys are set in .env."""
 
-    Same semantics as the contract (write-once per batch_id). It is NOT a blockchain: anyone with
-    file access can edit it. It exists so the full pipeline runs without keys.
-    """
-
-    mode = "SIMULATED"
+    mode = "NOT CONFIGURED"
     contract_address = None
-    GENESIS_BLOCK = 1_000_000
+    address = None
+    MESSAGE = ("Quai anchoring is not configured: set RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS in .env "
+               "and start the quai-service (start.ps1 does this)")
 
-    def __init__(self, ledger_path: str | Path, chain_id: int = QUAI_ORCHARD_CHAIN_ID):
-        self.path = Path(ledger_path)
+    def __init__(self, chain_id: int = QUAI_ORCHARD_CHAIN_ID):
         self.chain_id = chain_id
-        self._lock = threading.Lock()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        if not self.path.exists():
-            self._save({"blocks": []})
-
-    def _load(self) -> dict:
-        return json.loads(self.path.read_text(encoding="utf-8"))
-
-    def _save(self, data: dict) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
-        tmp.replace(self.path)
 
     def connected(self) -> bool:
-        return True
+        return False
 
-    def latest_block(self) -> int:
-        blocks = self._load()["blocks"]
-        return blocks[-1]["number"] if blocks else self.GENESIS_BLOCK
-
-    def anchor(self, root_hex: str, batch_id: int) -> dict:
-        with self._lock:
-            data = self._load()
-            if any(b["batch_id"] == batch_id for b in data["blocks"]):
-                raise AlreadyAnchored(f"batch {batch_id} already anchored")
-            prev = data["blocks"][-1]["block_hash"] if data["blocks"] else "0" * 64
-            number = (data["blocks"][-1]["number"] if data["blocks"] else self.GENESIS_BLOCK) + 1
-            ts = int(datetime.now(timezone.utc).timestamp())
-            tx_hash = "0x" + hashlib.sha256(f"tx|{batch_id}|{root_hex}|{ts}|{prev}".encode()).hexdigest()
-            block_hash = hashlib.sha256(f"{prev}|{number}|{tx_hash}".encode()).hexdigest()
-            data["blocks"].append({"number": number, "timestamp": ts, "batch_id": batch_id, "root": root_hex,
-                                   "tx_hash": tx_hash, "prev_block_hash": prev, "block_hash": block_hash})
-            self._save(data)
-        return {"tx_hash": tx_hash, "block_number": number, "block_timestamp": _iso(ts)}
-
-    def find_anchor_tx(self, batch_id: int) -> dict | None:
-        """Recover tx details of an existing anchor (used if the DB write after anchoring failed)."""
-        for b in self._load()["blocks"]:
-            if b["batch_id"] == batch_id:
-                return {"root": b["root"], "tx_hash": b["tx_hash"], "block_number": b["number"],
-                        "block_timestamp": _iso(b["timestamp"])}
+    def latest_block(self) -> None:
         return None
 
+    def anchor(self, root_hex: str, batch_id: int) -> dict:
+        raise AnchorError(self.MESSAGE)
+
     def get_anchor(self, batch_id: int) -> dict | None:
-        for b in self._load()["blocks"]:
-            if b["batch_id"] == batch_id:
-                return {"root": b["root"], "block_timestamp": _iso(b["timestamp"])}
+        raise AnchorError(self.MESSAGE)
+
+    def find_anchor_tx(self, batch_id: int) -> dict | None:
         return None
 
 
@@ -187,11 +150,11 @@ class QuaiServiceAnchorer:
                 "block_timestamp": d["block_timestamp"]}
 
 
-def make_anchorer(settings, ledger_path: str | Path):
-    """REAL (quai-service) when RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS are all set, else the simulator.
+def make_anchorer(settings, ledger_path: str | Path | None = None):
+    """REAL (quai-service) when RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS are all set, else NOT CONFIGURED.
 
     Python only checks that the keys are configured; it never reads or forwards CYPRUS1_PK.
     """
     if settings.blockchain_real:
         return QuaiServiceAnchorer(settings.contract_address, settings.chain_id)
-    return SimulatedChain(ledger_path, settings.chain_id)
+    return UnconfiguredAnchorer(settings.chain_id)

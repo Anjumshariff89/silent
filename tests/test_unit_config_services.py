@@ -19,8 +19,8 @@ def test_config_simulator_defaults(monkeypatch, tmp_path):
     s = cfg.load_settings(tmp_path / "missing.env")
     assert s.mode == "simulator" and s.api_key == cfg.DEV_API_KEY and s.using_dev_api_key
     assert len(s.jwt_secret) >= 32 and s.chain_id == 15000
-    assert s.integration_modes() == {"blockchain": "SIMULATED", "database": "SIMULATED", "telegram": "SIMULATED",
-                                     "windows_event_log": "SIMULATED"}
+    assert s.integration_modes() == {"blockchain": "NOT CONFIGURED", "database": "SQLITE", "telegram": "CONSOLE",
+                                     "windows_event_log": "UNAVAILABLE"}
     assert s.database_url.startswith("sqlite:///") and s.database_url.endswith("/local.db")
 
 
@@ -36,13 +36,13 @@ def test_config_badges_turn_real_only_when_all_keys_set(monkeypatch, tmp_path):
     monkeypatch.setenv("RPC_URL", "https://rpc.example")
     monkeypatch.setenv("CYPRUS1_PK", "0x" + "1" * 64)
     s = cfg.load_settings(tmp_path / "x.env")
-    assert s.integration_modes()["blockchain"] == "SIMULATED"  # contract address still missing
+    assert s.integration_modes()["blockchain"] == "NOT CONFIGURED"  # contract address still missing
     monkeypatch.setenv("CONTRACT_ADDRESS", "0x" + "2" * 40)
     monkeypatch.setenv("DATABASE_URL", "postgresql://u@h/db")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
     m = cfg.load_settings(tmp_path / "x.env").integration_modes()
-    assert m["blockchain"] == m["database"] == m["telegram"] == "REAL"
+    assert m["blockchain"] == m["telegram"] == "REAL" and m["database"] == "SUPABASE"
 
 
 def test_settings_repr_hides_secrets(monkeypatch, tmp_path):
@@ -78,12 +78,14 @@ def test_integrity_service_status_transitions(app, ingest):
     assert run_chain_verification(c, from_seq=2, to_seq=3)["result"] == "PASS"  # range verify uses predecessor
 
 
-def test_incidents_resolve_route(client, jwt_headers, ingest):
+def test_incidents_resolve_route(app, client, jwt_headers, ingest):
+    from sqlalchemy import text
     ingest(4)
-    client.post("/api/demo/tamper", json={"seq_id": 2}, headers=jwt_headers)
-    client.post("/api/demo/tamper", json={"seq_id": 3}, headers=jwt_headers)
+    with app.state.ctx.engine.begin() as c:  # tamper the temporary test DB: two modified logs
+        c.execute(text("UPDATE security_logs SET message='edited' WHERE seq_id IN (2, 3)"))
+    assert client.post("/api/verify", headers=jwt_headers).json()["result"] == "FAIL"
     assert client.get("/api/incidents", params={"status": "open"}, headers=jwt_headers).json()["total"] == 2
-    r = client.post("/api/incidents/resolve", params={"target": "sandbox"}, headers=jwt_headers).json()
+    r = client.post("/api/incidents/resolve", params={"target": "live"}, headers=jwt_headers).json()
     assert r == {"resolved": 2}
     assert client.get("/api/incidents", params={"status": "open"}, headers=jwt_headers).json()["total"] == 0
     assert client.get("/api/incidents", params={"status": "resolved"}, headers=jwt_headers).json()["total"] == 2
@@ -113,4 +115,4 @@ def test_quai_keys_route_anchoring_through_quai_service(tmp_path):
     with TestClient(app) as c:
         assert c.get("/api/health").json()["integrations"]["blockchain"] == "REAL"
     s2 = make_settings(tmp_path, rpc_url="https://rpc.example", cyprus1_pk="", contract_address="0x" + "2" * 40)
-    assert create_app(s2, run_monitor=False).state.ctx.anchorer.mode == "SIMULATED"  # partial keys -> simulator
+    assert create_app(s2, run_monitor=False).state.ctx.anchorer.mode == "NOT CONFIGURED"  # partial keys: nothing faked

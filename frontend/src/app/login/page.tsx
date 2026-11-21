@@ -1,12 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { post, setToken, USE_MOCK } from "@/lib/api";
+import { post, setToken } from "@/lib/api";
 import { ErrorState } from "@/components/ui";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,14 +38,13 @@ export default function LoginPage() {
         <label className="block text-sm">
           <span className="text-soc-muted">Password (your API_KEY from .env)</span>
           <input data-testid="password" type="password" className="input mt-1 w-full" value={password}
-            onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required={!USE_MOCK} />
+            onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         </label>
         <p className="text-xs text-soc-muted">
-          Simulator mode with an empty API_KEY uses the development key <code className="text-sky-300">dev-local-api-key</code>.
+          Username <code className="text-sky-300">admin</code>, password = the <code className="text-sky-300">API_KEY</code> value in your <code className="text-sky-300">.env</code>.
         </p>
         {error && <ErrorState message={error} />}
         <button data-testid="login" className="btn-primary w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-        {USE_MOCK && <button type="button" className="btn-secondary w-full" onClick={() => router.push("/")}>Continue with mock data</button>}
       </form>
     </main>
   );

@@ -51,7 +51,19 @@ if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "$REQ_HASH" ]; then
   "$PY" -m pip install -q -r requirements.txt
   echo "$REQ_HASH" > "$STAMP"
 fi
-[ -f .env ] || { cp .env.example .env; echo "Created .env from .env.example (SIMULATED). Edit it yourself to add keys."; }
+if [ ! -f .env ]; then
+  "$PY" - <<'PYEOF'
+import secrets
+lines = open(".env.example").read().splitlines()
+out = []
+for line in lines:
+    if line == "API_KEY=": line = "API_KEY=" + secrets.token_urlsafe(32)
+    elif line == "JWT_SECRET=": line = "JWT_SECRET=" + secrets.token_urlsafe(48)
+    out.append(line)
+open(".env", "w").write("\n".join(out) + "\n")
+PYEOF
+  echo "Created .env with freshly generated API_KEY and JWT_SECRET (values not shown)."
+fi
 
 ( cd backend/blockchain/quai-service
   [ -d node_modules ] || { echo "==> npm ci (quai-service)"; npm ci --no-audit --no-fund; } )
@@ -71,7 +83,7 @@ nohup "$PY" -m uvicorn backend.main:app --host 127.0.0.1 --port "$API_PORT" < /d
 echo "backend $!" >> "$PIDS"
 wait_http "http://127.0.0.1:$API_PORT/api/health" 60 || { echo "backend not healthy; see $LOGS/backend.log"; exit 1; }
 
-echo "==> Starting log agent"
+echo "==> Starting log agent (real Windows Security events only; exits with a reason elsewhere)"
 nohup "$PY" -m backend.agent.agent --server "http://127.0.0.1:$API_PORT" --collector auto < /dev/null > "$LOGS/agent.log" 2>&1 &
 echo "agent $!" >> "$PIDS"
 
@@ -97,6 +109,6 @@ print(f"  Backend   http://127.0.0.1:{api}/docs  status={h['status']} db={h['dat
 print(f"  Quai svc  http://127.0.0.1:{quai}/status  mode={q['mode']} chain={q['chain_id']} broadcast_allowed={q['broadcast_allowed']}")
 print(f"  Dashboard http://127.0.0.1:{web}")
 print("  Integrations: " + " ".join(f"{k}={v}" for k, v in h["integrations"].items()))
-print("  Login: admin / " + ("dev-local-api-key (simulator dev key)" if h["dev_api_key_in_use"] else "<your API_KEY>"))
+print("  Login: admin / " + ("dev-local-api-key (dev key)" if h["dev_api_key_in_use"] else "the API_KEY value in .env"))
 EOF
 echo "Stop with: ./start.sh --stop"

@@ -43,7 +43,8 @@ const PILL: Record<string, string> = {
 };
 const TONE: Record<string, string> = {
   green: "green", online: "green", PASS: "green", MATCH: "green", REAL: "green", resolved: "slate", info: "sky",
-  yellow: "yellow", delayed: "yellow", NOT_ANCHORED: "yellow", warning: "yellow", SIMULATED: "yellow", sandbox: "yellow",
+  yellow: "yellow", delayed: "yellow", NOT_ANCHORED: "yellow", warning: "yellow", SIMULATED: "yellow", "NOT CONFIGURED": "yellow", UNAVAILABLE: "yellow", CONSOLE: "yellow", sandbox: "yellow",
+  SQLITE: "sky", SUPABASE: "green",
   red: "red", offline: "red", FAIL: "red", MISMATCH: "red", critical: "red", open: "red", live: "sky",
 };
 
@@ -56,11 +57,11 @@ export function Pill({ value, label }: { value: string; label?: ReactNode }) {
   );
 }
 
-export function ModeBadge({ name, mode, label }: { name: string; mode: "REAL" | "SIMULATED"; label?: string }) {
+export function ModeBadge({ name, mode, label }: { name: string; mode: string; label?: string }) {
   return (
     <span title={`${name}: ${label ?? mode}`} data-testid={`badge-${name}`} data-mode={mode}
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ring-inset ${
-        mode === "REAL" ? PILL.green : PILL.yellow}`}>
+        mode === "REAL" || mode === "SUPABASE" ? PILL.green : mode === "SQLITE" ? PILL.sky : PILL.yellow}`}>
       <span className="font-normal opacity-80">{name}</span> {label ?? mode}
     </span>
   );

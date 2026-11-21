@@ -39,7 +39,7 @@ if (require.main === module) {
   const deps = build();
   const server = http.createServer(createListener(createHandlers(deps)));
   server.listen(PORT, HOST, () => {
-    console.log(`[quai-service] listening on http://${HOST}:${PORT} mode=${deps.config.real ? "REAL" : "SIMULATED"} ` +
+    console.log(`[quai-service] listening on http://${HOST}:${PORT} mode=${deps.config.real ? "REAL" : "NOT CONFIGURED"} ` +
       `chain=${deps.config.chainId} broadcast_allowed=${deps.config.allowBroadcast}` +
       (deps.wallet ? ` wallet=${deps.wallet.address}` : ""));
   });

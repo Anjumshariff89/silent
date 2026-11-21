@@ -63,6 +63,7 @@ def get_agents(request: Request) -> dict:
         return {"items": repo.list_agents(conn, s.heartbeat_online_s, s.heartbeat_offline_s)}
 
 
+@router.get("/health", tags=["health"])
 @router.get("/api/health", tags=["health"])
 def health(request: Request) -> dict:
     c = ctx(request)

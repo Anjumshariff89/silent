@@ -16,7 +16,7 @@ Tamper-evident security logging: SHA-256 hash chains → Merkle trees → anchor
   Use `node scripts/deploy.js` (dry run) to produce that plan; `--broadcast` / `--allow-broadcast` only after approval.
 - **Throwaway testnet wallet only. Synthetic data only. Never touch real system logs** (the Windows collector is read-only).
 - **`.env.example` holds exactly these 10 lines** (enforced by `tests/test_step1_setup.py`):
-  `MODE=simulator`, `API_KEY=`, `JWT_SECRET=`, `DATABASE_URL=sqlite:///./local.db`, `RPC_URL=`, `CYPRUS1_PK=`,
+  `MODE=real`, `API_KEY=`, `JWT_SECRET=`, `DATABASE_URL=sqlite:///./local.db`, `RPC_URL=`, `CYPRUS1_PK=`,
   `CHAIN_ID=15000`, `CONTRACT_ADDRESS=`, `TELEGRAM_BOT_TOKEN=`, `TELEGRAM_CHAT_ID=`.
 - **Do not integrate:** Polygon, x402 Work, Hashference, AbuseIPDB, IPFS (no uploads), OpenTimestamps, Slack.
 - **Pin every dependency** (exact versions; `requirements.txt` + `requirements.lock.txt`, npm `--save-exact`).

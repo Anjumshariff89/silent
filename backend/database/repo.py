@@ -74,7 +74,10 @@ def list_agents(conn: Connection, online_s: float, offline_s: float) -> list[dic
         d = _row(r)
         status, age = agent_status(d["last_heartbeat"], online_s, offline_s)
         out.append({"agent_id": d["agent_id"], "hostname": d["hostname"], "agent_version": d["agent_version"],
-                    "collector_mode": d["collector_mode"], "last_heartbeat": d["last_heartbeat"],
+                    # An agent that never sent a heartbeat only posts logs through the ingest API (e.g. the seed
+                    # script); the stored column default is a legacy value, so report what it really is.
+                    "collector_mode": d["collector_mode"] if d["last_heartbeat"] else "api",
+                    "last_heartbeat": d["last_heartbeat"],
                     "seconds_since_heartbeat": age, "status": status, "offline_alerted": bool(d["offline_alerted"])})
     return out
 

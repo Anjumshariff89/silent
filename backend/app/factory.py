@@ -60,7 +60,7 @@ def create_app(settings: Settings | None = None, run_monitor: bool = True) -> Fa
     from backend.api import auth, core_routes
     app.include_router(auth.router)
     app.include_router(core_routes.router)
-    for mod in ("integrity_routes", "merkle_routes", "blockchain_routes", "evidence_routes", "demo_routes"):
+    for mod in ("integrity_routes", "merkle_routes", "blockchain_routes", "evidence_routes"):
         try:  # routers added by later steps
             m = __import__(f"backend.api.{mod}", fromlist=["router"])
             app.include_router(m.router)

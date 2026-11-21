@@ -12,8 +12,6 @@ export default function IntegrityPage() {
   const [result, setResult] = useState<VerifyResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [seq, setSeq] = useState("2");
-  const [kind, setKind] = useState<"modify" | "delete" | "reorder">("modify");
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label); setErr(null);
@@ -56,22 +54,6 @@ export default function IntegrityPage() {
                 {busy === "verify" ? "Verifying…" : "Verify full chain (live data)"}
               </button>
               {result && <p className="mt-2 text-sm">Result: <Pill value={result.result} /> — checked {result.checked_count} logs, {result.issues.length} issue(s).</p>}
-            </div>
-            <div className="rounded border border-red-500/30 p-3">
-              <h3 className="mb-2 text-sm font-semibold text-red-300">Tamper demo (sandbox copy only)</h3>
-              <p className="mb-2 text-xs text-soc-muted">The server copies all logs to a sandbox database, applies the attack there and verifies it. Live logs are never changed.</p>
-              <div className="flex flex-wrap gap-2">
-                <select className="input" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} aria-label="Attack">
-                  <option value="modify">Modify a log</option><option value="delete">Delete a log</option><option value="reorder">Reorder two logs</option>
-                </select>
-                <input className="input w-24" type="number" min={1} value={seq} onChange={(e) => setSeq(e.target.value)} aria-label="Seq ID" />
-                <button className="btn-danger" disabled={!!busy} data-testid="run-tamper"
-                  onClick={() => run("tamper", async () => { await post("/api/demo/tamper", { seq_id: Number(seq), kind }); })}>
-                  {busy === "tamper" ? "Attacking…" : "Run attack"}
-                </button>
-                <button className="btn-secondary" disabled={!!busy} data-testid="reset-demo"
-                  onClick={() => run("reset", async () => { await post("/api/demo/reset"); })}>Reset demo</button>
-              </div>
             </div>
           </div>
         </Card>

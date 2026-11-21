@@ -37,7 +37,7 @@ export default function BlockchainPage() {
             <div className="col-span-2"><dt className="text-soc-muted">Contract</dt><dd>{s.contract_address ? (
               explorerAddress(s.chain_id, s.contract_address)
                 ? <a className="font-mono text-xs text-sky-400 underline" target="_blank" rel="noreferrer" href={explorerAddress(s.chain_id, s.contract_address)!}>{s.contract_address} ↗</a>
-                : <code className="font-mono text-xs">{s.contract_address}</code>) : "simulator (no contract)"}</dd></div>
+                : <code className="font-mono text-xs">{s.contract_address}</code>) : "not configured (set CONTRACT_ADDRESS in .env)"}</dd></div>
             <div className="col-span-2"><dt className="text-soc-muted">Anchor wallet</dt><dd className="font-mono text-xs">{s.anchor_wallet ?? "—"}</dd></div>
           </dl>
         )}
@@ -54,7 +54,7 @@ export default function BlockchainPage() {
                 return (
                   <tr key={b.batch_id}>
                     <td>#{b.batch_id}</td><td>{b.from_seq}–{b.to_seq}</td><td><Hash value={b.root} /></td>
-                    <td>{b.tx_hash ? (link ? <a href={link} target="_blank" rel="noreferrer" className="font-mono text-xs text-sky-400 underline">{b.tx_hash.slice(0, 14)}… ↗</a> : <span><Hash value={b.tx_hash} /> <Pill value={b.mode ?? "SIMULATED"} /></span>) : <span className="text-soc-muted">not anchored</span>}</td>
+                    <td>{b.tx_hash ? (link ? <a href={link} target="_blank" rel="noreferrer" className="font-mono text-xs text-sky-400 underline">{b.tx_hash.slice(0, 14)}… ↗</a> : <span><Hash value={b.tx_hash} /> <Pill value={b.mode ?? "unknown"} /></span>) : <span className="text-soc-muted">not anchored</span>}</td>
                     <td className="space-x-1 whitespace-nowrap">
                       {!b.tx_hash && <button className="btn-primary" disabled={busy !== null} data-testid={`anchor-${b.batch_id}`} onClick={async () => {
                         setBusy(b.batch_id); setErr(null);

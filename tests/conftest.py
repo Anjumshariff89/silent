@@ -27,8 +27,21 @@ def settings(tmp_path):
     return make_settings(tmp_path)
 
 
+def with_fake_chain(app, tmp_path: Path):
+    """Plug the test-only FakeChain into an app (the application itself has no simulated chain)."""
+    from tests.fake_chain import FakeChain
+    app.state.ctx.anchorer = FakeChain(tmp_path / "fake_chain.json")
+    return app
+
+
 @pytest.fixture
-def app(settings):
+def app(settings, tmp_path):
+    return with_fake_chain(create_app(settings, run_monitor=False), tmp_path)
+
+
+@pytest.fixture
+def real_app(settings):
+    """The app exactly as configured (no Quai keys -> anchoring NOT CONFIGURED)."""
     return create_app(settings, run_monitor=False)
 
 

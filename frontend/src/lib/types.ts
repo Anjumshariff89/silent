@@ -1,4 +1,5 @@
-export type Badge = "REAL" | "SIMULATED";
+/** Integration status from /api/health (no simulated modes). */
+export type Badge = "REAL" | "NOT CONFIGURED" | "SQLITE" | "SUPABASE" | "CONSOLE" | "UNAVAILABLE";
 
 export interface Health {
   status: string;

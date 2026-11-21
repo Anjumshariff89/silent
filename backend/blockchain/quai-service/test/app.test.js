@@ -36,10 +36,10 @@ function fakes(over = {}) {
   return { deps, sent, h: createHandlers(deps) };
 }
 
-test("SIMULATED mode: status says so, anchor refuses", async () => {
+test("NOT CONFIGURED mode: status says so, anchor refuses", async () => {
   const h = createHandlers({ config: { chainId: 15000n, contractAddress: "", allowBroadcast: true, real: false }, getZone: () => "0x00" });
   const s = await h.status();
-  assert.equal(s.mode, "SIMULATED"); assert.equal(s.chain_id, 15000); assert.equal(s.connected, false);
+  assert.equal(s.mode, "NOT CONFIGURED"); assert.equal(s.chain_id, 15000); assert.equal(s.connected, false);
   await assert.rejects(h.anchor({ root: ROOT, batch_id: "1" }), { status: 503 });
 });
 

@@ -25,7 +25,7 @@ def _report(n: int, name: str, ok: bool, evidence: str) -> None:
 
 def test_six_scenarios_end_to_end(app, client, agent_headers, jwt_headers):
     # 1. Normal ingestion -------------------------------------------------------------------------
-    hb = {"agent_id": "agent-e2e", "hostname": "WIN-SYNTH-E2E", "agent_version": "0.1.0", "collector_mode": "simulator"}
+    hb = {"agent_id": "agent-e2e", "hostname": "WIN-SYNTH-E2E", "agent_version": "0.1.0", "collector_mode": "windows"}
     assert client.post("/api/heartbeats", json=hb, headers=agent_headers).status_code == 200
     seqs = [client.post("/api/logs/ingest", json=sample_event(i, agent_id="agent-e2e"), headers=agent_headers).json()["seq_id"]
             for i in range(12)]
@@ -33,27 +33,39 @@ def test_six_scenarios_end_to_end(app, client, agent_headers, jwt_headers):
     _report(1, "Normal ingestion", seqs == list(range(1, 13)) and verify["result"] == "PASS",
             f"seq_ids {seqs[0]}..{seqs[-1]} sequential, chain verify={verify['result']}")
 
+    # 2-4 run the real verifier on COPIES of the test database (the tamper module only ever writes to a copy)
+    from backend.app.integrity_service import run_chain_verification
+    from backend.crypto.tamper_simulator import fingerprint, make_sandbox, tamper
+    ctx = app.state.ctx
+    fp_before = fingerprint(ctx.engine)
+
+    def attack(kind, seq):
+        copy = make_sandbox(ctx.engine)
+        tamper(copy, kind, seq)
+        r = run_chain_verification(ctx, source=copy, target="sandbox")
+        copy.dispose()
+        return r
+
     # 2. Modified log detected --------------------------------------------------------------------
-    r = client.post("/api/demo/tamper", json={"seq_id": 5, "kind": "modify"}, headers=jwt_headers).json()
-    issues = [(i["type"], i["seq_id"]) for i in r["verification"]["issues"]]
-    _report(2, "Modified log detected", issues == [("modified", 5)] and r["original_unchanged"],
-            f"issues={issues}, original_unchanged={r['original_unchanged']}")
+    r = attack("modify", 5)
+    issues = [(i["type"], i["seq_id"]) for i in r["issues"]]
+    _report(2, "Modified log detected", issues == [("modified", 5)], f"issues={issues}")
 
     # 3. Deleted log detected ---------------------------------------------------------------------
-    r = client.post("/api/demo/tamper", json={"seq_id": 8, "kind": "delete"}, headers=jwt_headers).json()
-    issues = [(i["type"], i["seq_id"]) for i in r["verification"]["issues"]]
-    _report(3, "Deleted log detected", issues == [("missing", 8)] and r["original_unchanged"],
-            f"issues={issues} ({r['verification']['issues'][0]['detail']})")
+    r = attack("delete", 8)
+    issues = [(i["type"], i["seq_id"]) for i in r["issues"]]
+    _report(3, "Deleted log detected", issues == [("missing", 8)], f"issues={issues} ({r['issues'][0]['detail']})")
 
     # 4. Reordered logs detected ------------------------------------------------------------------
-    r = client.post("/api/demo/tamper", json={"seq_id": 3, "kind": "reorder"}, headers=jwt_headers).json()
-    types = {i["type"] for i in r["verification"]["issues"]}
-    seqs_hit = sorted(i["seq_id"] for i in r["verification"]["issues"])
-    _report(4, "Reordered logs detected", types == {"reordered"} and {3, 4} <= set(seqs_hit) and r["original_unchanged"],
+    r = attack("reorder", 3)
+    types = {i["type"] for i in r["issues"]}
+    seqs_hit = sorted(i["seq_id"] for i in r["issues"])
+    _report(4, "Reordered logs detected", types == {"reordered"} and {3, 4} <= set(seqs_hit),
             f"types={types}, seq_ids={seqs_hit}")
     inc = client.get("/api/incidents", params={"target": "sandbox"}, headers=jwt_headers).json()
     assert inc["total"] >= 3
-    assert client.post("/api/verify", headers=jwt_headers).json()["result"] == "PASS"  # live chain untouched
+    assert fingerprint(ctx.engine) == fp_before  # original data untouched
+    assert client.post("/api/verify", headers=jwt_headers).json()["result"] == "PASS"  # live chain intact
 
     # 5. Anchored Merkle root verified ------------------------------------------------------------
     b = client.post("/api/merkle/build", headers=jwt_headers).json()

@@ -1,4 +1,4 @@
-"""Database access: SQLAlchemy engine for Postgres/Supabase (REAL) or SQLite (SIMULATED fallback).
+"""Database access: SQLAlchemy engine for Postgres/Supabase (REAL) or SQLite (local fallback).
 
 The schema is applied from schema.sql / schema_postgres.sql (single source of truth), and queries
 use SQLAlchemy Core `text()` with bound parameters only (no string formatting = no SQL injection).

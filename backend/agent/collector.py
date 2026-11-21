@@ -1,7 +1,7 @@
-"""Event collectors: Windows Security Event Log (pywin32) with automatic simulator fallback.
+"""Event collector: Windows Security Event Log (pywin32), read-only.
 
-The Windows collector only READS the Security log (EvtQuery / ReadEventLog). It never clears,
-writes or backs up system logs. The simulator produces synthetic data only.
+The collector only READS the Security log (ReadEventLog). It never clears, writes or backs up system
+logs. There is no synthetic event generator: logs come from Windows or from the ingest API.
 """
 from __future__ import annotations
 
@@ -36,35 +36,6 @@ class Collector(Protocol):
     mode: str
 
     def collect(self, max_events: int = 10) -> list[dict]: ...
-
-
-class SimulatorCollector:
-    """Generates synthetic security events. No real users, hosts or IPs."""
-
-    mode = "simulator"
-
-    def __init__(self, hostname: str = "WIN-SYNTH-01", seed: int | None = None):
-        self.hostname = hostname
-        self.rng = random.Random(seed)
-
-    def _event(self) -> dict:
-        event_id = self.rng.choices(list(MONITORED_EVENTS), weights=[50, 35, 10, 5])[0]
-        etype, severity, msg = MONITORED_EVENTS[event_id]
-        user = f"synthetic.user{self.rng.randint(1, 8)}"
-        ip = str(ipaddress.IPv4Address(int(ipaddress.IPv4Address("10.0.0.0")) + self.rng.randint(2, 250)))
-        return {
-            "event_id": event_id,
-            "event_type": etype,
-            "severity": severity,
-            "source_host": self.hostname,
-            "username": user,
-            "source_ip": ip,
-            "message": f"{msg} (synthetic)",
-            "event_time": _now(),
-        }
-
-    def collect(self, max_events: int = 10) -> list[dict]:
-        return [self._event() for _ in range(self.rng.randint(1, max(1, max_events)))]
 
 
 class WindowsEventLogCollector:  # pragma: no cover - requires Windows + pywin32
@@ -119,14 +90,17 @@ class WindowsEventLogCollector:  # pragma: no cover - requires Windows + pywin32
         return ["RecordNumber", "EventID", "ComputerName", "TimeGenerated", "StringInserts"]
 
 
-def make_collector(prefer: str = "auto", hostname: str = "WIN-SYNTH-01") -> Collector:
-    """Return the Windows collector when possible, else fall back to the simulator."""
-    if prefer in ("auto", "windows") and windows_collector_available():
-        try:
-            return WindowsEventLogCollector()
-        except Exception as exc:  # e.g. not elevated: Access is denied
-            print(f"[agent] Windows collector unavailable ({type(exc).__name__}); falling back to simulator")
-            return SimulatorCollector(hostname)
-    if prefer == "windows":
-        print("[agent] pywin32 not available on this host; falling back to simulator")
-    return SimulatorCollector(hostname)
+class CollectorUnavailable(Exception):
+    """Raised when real Windows Security events cannot be read on this machine."""
+
+
+def make_collector(prefer: str = "auto") -> Collector:
+    """Return the real Windows Security Event Log collector. There is no synthetic fallback: on machines without
+    pywin32, or without the rights to read the Security log, CollectorUnavailable explains what is missing."""
+    if not windows_collector_available():
+        raise CollectorUnavailable("pywin32 / Windows Event Log not available on this machine (Windows only)")
+    try:
+        return WindowsEventLogCollector()
+    except Exception as exc:  # e.g. not elevated: "Access is denied"
+        raise CollectorUnavailable(f"cannot read the Windows Security log ({type(exc).__name__}); "
+                                   "run PowerShell as Administrator") from None

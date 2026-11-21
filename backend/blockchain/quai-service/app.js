@@ -21,7 +21,7 @@ function iso(seconds) {
 
 /**
  * deps: { config: {chainId: bigint, contractAddress, allowBroadcast, real}, provider, wallet, contract, getZone }
- * In SIMULATED mode (keys missing) provider/wallet/contract may be null.
+ * When NOT CONFIGURED (keys missing) provider/wallet/contract may be null.
  */
 function createHandlers(deps) {
   const { config } = deps;
@@ -31,7 +31,7 @@ function createHandlers(deps) {
   }
 
   async function guards({ needWallet }) {
-    if (!config.real) throw new HttpError(503, "quai-service is in SIMULATED mode: RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS must be set");
+    if (!config.real) throw new HttpError(503, "quai-service is NOT CONFIGURED: RPC_URL, CYPRUS1_PK and CONTRACT_ADDRESS must be set");
     const chain = await rpcChainId();
     if (chain === null) throw new HttpError(503, "Quai RPC unreachable");
     if (chain !== config.chainId) throw new HttpError(503, `RPC chain ${chain} != configured CHAIN_ID ${config.chainId}; refusing`);
@@ -51,7 +51,7 @@ function createHandlers(deps) {
 
   return {
     async status() {
-      const base = { mode: config.real ? "REAL" : "SIMULATED", network: "Quai Orchard Cyprus-1",
+      const base = { mode: config.real ? "REAL" : "NOT CONFIGURED", network: "Quai Orchard Cyprus-1",
         chain_id: Number(config.chainId), broadcast_allowed: !!config.allowBroadcast,
         contract_address: config.contractAddress || null };
       if (!config.real) return { ...base, connected: false, rpc_chain_id: null, wallet_address: null, latest_block: null };
