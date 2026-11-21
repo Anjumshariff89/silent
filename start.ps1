@@ -122,6 +122,16 @@ function Test-PortInUse([int]$Port) {
     finally { $client.Dispose() }
 }
 
+function Fail-Start([string]$Service, [string]$LogName) {
+    # A service did not come up: stop everything this run started (no half-running stack), show the real error.
+    $log = Join-Path $LogDir $LogName
+    $last = Get-Content $log -Tail 40 -ErrorAction SilentlyContinue |
+            Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*(\^+|~+)\s*$' } | Select-Object -Last 3
+    Stop-All
+    $detail = if ($last) { "`n  Last lines of ${log}:`n    " + ($last -join "`n    ") } else { "" }
+    throw "$Service did not start; everything this run started was stopped.$detail"
+}
+
 function Wait-Http($url, $seconds) {
     $deadline = (Get-Date).AddSeconds($seconds)
     while ((Get-Date) -lt $deadline) {
@@ -232,6 +242,11 @@ try {
 # `next build`, and the dashboard is rebuilt when -ApiPort changes.
 $apiUrl = "http://127.0.0.1:$ApiPort"
 $builtFor = Join-Path $DataDir ".frontend-api-url"
+# NEXT_PUBLIC_* values (API URL, Supabase URL/anon key in frontend/.env.local) are compiled into the build, so the
+# build stamp records the API URL plus a hash of .env.local: adding, editing or deleting it triggers a rebuild.
+$envLocal = Join-Path $Root "frontend/.env.local"
+$envLocalHash = if (Test-Path $envLocal) { (Get-FileHash -Algorithm SHA256 $envLocal).Hash } else { "none" }
+$buildKey = "$apiUrl|env.local=$envLocalHash"
 Push-Location (Join-Path $Root "frontend")
 try {
     if ($Rebuild -or -not (Test-Path "node_modules")) {
@@ -241,7 +256,7 @@ try {
     }
     $buildId = Join-Path ".next" "BUILD_ID"
     $needBuild = $Rebuild -or -not (Test-Path $buildId) -or
-                 -not (Test-Path $builtFor) -or ((Get-Content $builtFor) -ne $apiUrl)
+                 -not (Test-Path $builtFor) -or ((Get-Content $builtFor -Raw).Trim() -ne $buildKey)
     if (-not $needBuild) {
         # Rebuild when the dashboard source changed since the last build (e.g. after git pull).
         $builtAt = (Get-Item $buildId).LastWriteTimeUtc
@@ -256,7 +271,7 @@ try {
         $env:NEXT_TELEMETRY_DISABLED = "1"
         & $Npm run build
         if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
-        Set-Content -Path $builtFor -Value $apiUrl
+        Set-Content -Path $builtFor -Value $buildKey
     }
 } finally { Pop-Location }
 $NextBin = Join-Path $Root "frontend/node_modules/next/dist/bin/next"
@@ -269,11 +284,11 @@ $env:QUAI_SERVICE_PORT = "$QuaiPort"                       # read by the quai-se
 $env:QUAI_SERVICE_URL  = "http://127.0.0.1:$QuaiPort"      # read by the backend (QuaiServiceAnchorer)
 $qArgs = @("server.js"); if ($AllowBroadcast) { $qArgs += "--allow-broadcast" }
 $quai = Start-Svc "quai-service" "node" $qArgs (Join-Path $Root "backend/blockchain/quai-service")
-if (-not (Wait-Http "http://127.0.0.1:$QuaiPort/status" 30)) { throw "quai-service did not start; see $LogDir\quai-service.err.log (stop with .\start.ps1 -Stop)" }
+if (-not (Wait-Http "http://127.0.0.1:$QuaiPort/status" 30)) { Fail-Start "quai-service" "quai-service.err.log" }
 
 Write-Step "Starting backend on http://127.0.0.1:$ApiPort"
 $backend = Start-Svc "backend" $Py @("-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "$ApiPort") $Root
-if (-not (Wait-Http "http://127.0.0.1:$ApiPort/api/health" 60)) { throw "backend did not become healthy; see $LogDir\backend.err.log (stop with .\start.ps1 -Stop)" }
+if (-not (Wait-Http "http://127.0.0.1:$ApiPort/api/health" 60)) { Fail-Start "backend" "backend.err.log" }
 
 Write-Step "Starting log agent (real Windows Security events; needs Windows + an elevated PowerShell)"
 $agent = Start-Svc "agent" $Py @("-m", "backend.agent.agent", "--server", $apiUrl, "--collector", "auto") $Root
@@ -291,7 +306,7 @@ if ($WithVerifier) {
 Write-Step "Starting dashboard on http://127.0.0.1:$WebPort"
 $env:NEXT_TELEMETRY_DISABLED = "1"
 $web = Start-Svc "frontend" "node" @($NextBin, "start", "-p", "$WebPort") (Join-Path $Root "frontend")
-if (-not (Wait-Http "http://127.0.0.1:$WebPort/login" 60)) { throw "dashboard did not start; see $LogDir\frontend.err.log (stop with .\start.ps1 -Stop)" }
+if (-not (Wait-Http "http://127.0.0.1:$WebPort/login" 60)) { Fail-Start "dashboard" "frontend.err.log" }
 
 # ---------------------------------------------------------------- summary
 $health = Invoke-RestMethod "http://127.0.0.1:$ApiPort/api/health"
@@ -304,8 +319,10 @@ if ($agentRunning) { Write-Host ("  Agent     pid {0}  (logs: data/runtime_logs/
 else { Write-Host ("  Agent     not running: {0}" -f $agentWhy) -ForegroundColor Yellow
        Write-Host "            Logs can still be sent through the API: .\.venv\Scripts\python.exe scripts\seed_logs.py" -ForegroundColor Yellow }
 Write-Host ("  Dashboard http://127.0.0.1:{0}" -f $WebPort)
-Write-Host ("  Integrations: blockchain={0} database={1} telegram={2} windows_event_log={3}" -f `
-    $health.integrations.blockchain, $health.integrations.database, $health.integrations.telegram, $health.integrations.windows_event_log)
-if ($health.dev_api_key_in_use) { Write-Host "  Login: admin / dev-local-api-key (dev key - set API_KEY in .env)" -ForegroundColor Yellow }
+Write-Host ("  Integrations: blockchain={0} database={1} telegram={2} windows_event_log={3} auth={4}" -f `
+    $health.integrations.blockchain, $health.integrations.database, $health.integrations.telegram,
+    $health.integrations.windows_event_log, $health.integrations.auth)
+if ($health.integrations.auth -eq "SUPABASE") { Write-Host "  Login: your Supabase account (email + password; 'Create one' on the login page)" }
+elseif ($health.dev_api_key_in_use) { Write-Host "  Login: admin / dev-local-api-key (dev key - set API_KEY in .env)" -ForegroundColor Yellow }
 else { Write-Host "  Login: admin / <your API_KEY from .env>" }
 Write-Host "Stop everything with: .\start.ps1 -Stop"

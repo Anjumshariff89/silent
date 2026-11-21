@@ -66,6 +66,9 @@ def main() -> int:
 
         if args.verify or args.build_merkle:
             tok = client.post(f"{base}/api/auth/login", json={"username": "admin", "password": settings.api_key})
+            if tok.status_code == 403:  # Supabase sign-in is on: verification needs a signed-in user
+                print("Supabase sign-in is enabled: run Verify / Build Merkle from the dashboard (signed in).")
+                return 0
             tok.raise_for_status()
             h = {"Authorization": f"Bearer {tok.json()['access_token']}"}
             if args.verify:

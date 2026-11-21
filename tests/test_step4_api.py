@@ -107,7 +107,7 @@ def test_health_reports_truthful_status_and_no_secrets(real_app, settings):
             body = c.get(path).json()
             assert body["status"] == "ok"
             assert body["integrations"] == {"blockchain": "NOT CONFIGURED", "database": "SQLITE",
-                                            "telegram": "CONSOLE", "windows_event_log": "UNAVAILABLE"}
+                                            "telegram": "CONSOLE", "windows_event_log": "UNAVAILABLE", "auth": "LOCAL"}
             assert settings.api_key not in str(body) and settings.jwt_secret not in str(body)
 
 

@@ -83,8 +83,9 @@ Base URL: `http://127.0.0.1:8000`. All bodies are JSON (`Content-Type: applicati
 | Caller | Mechanism | Header |
 |---|---|---|
 | Log agent | Static API key from `API_KEY` | `X-API-Key: <key>` |
-| Dashboard | JWT (HS256, signed with `JWT_SECRET`, 60 min expiry) obtained from `POST /api/auth/login` | `Authorization: Bearer <jwt>` |
-| Public | none | `GET /api/health` only |
+| Dashboard (Supabase Auth, when `SUPABASE_URL` / `SUPABASE_JWT_SECRET` are set) | Supabase access token from email/password sign-in. Verified with `SUPABASE_JWT_SECRET` (HS256) or the project's JWKS (ES256/RS256); `aud` and `role` must be `authenticated`, `iss` = `SUPABASE_URL/auth/v1`. `POST /api/auth/login` then returns 403. | `Authorization: Bearer <access_token>` |
+| Dashboard (local, no Supabase) | JWT (HS256, signed with `JWT_SECRET`, 60 min expiry) obtained from `POST /api/auth/login` | `Authorization: Bearer <jwt>` |
+| Public | none | `GET /health` and `GET /api/health` only |
 
 ### Standard error body
 
@@ -466,6 +467,20 @@ Server → client messages (JSON, one per event):
 { "type": "anchor",       "data": { "batch_id": 7, "tx_hash": "0x...", "mode": "SIMULATED" } }
 ```
 Connection without a valid token is closed with code 1008 (policy violation).
+
+### App routes (short aliases used by the dashboard flow; same code and data as the `/api/...` routes)
+
+| Route | Auth | Same as |
+|---|---|---|
+| `GET /health` | public | `GET /api/health` |
+| `POST /logs` | `X-API-Key` **or** bearer token | `POST /api/logs/ingest` (same body, same response) |
+| `GET /logs` | bearer | `GET /api/logs` (`page`, `page_size`, `q`) |
+| `GET /verify` | bearer | `POST /api/verify` for the whole live chain |
+| `POST /merkle/build` | bearer | `POST /api/merkle/build` |
+| `POST /anchor` | bearer | `POST /api/blockchain/anchor`; body optional `{ "batch_id": 3 }`, default = newest un-anchored batch (400 if none) |
+| `GET /anchors` | bearer | stored anchors: `{ "items": [{ "id", "merkle_root_id", "root", "leaf_count", "tx_hash", "chain_id", "block_number", "block_timestamp", "contract_address", "explorer_url", "mode", "status": "confirmed", "created_at" }] }` |
+
+Contract strings for tests: `GET /logs` · `GET /anchors`
 
 ---
 

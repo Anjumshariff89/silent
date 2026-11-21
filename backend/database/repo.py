@@ -178,6 +178,14 @@ def create_incident(conn: Connection, *, type: str, description: str, severity: 
     return get_incident(conn, new_id)
 
 
+def find_open_incident(conn: Connection, *, type: str, seq_id: int | None, target: str, description: str) -> int | None:
+    """Id of an OPEN incident for the same issue (so repeated verifications do not duplicate it)."""
+    return conn.execute(text(
+        "SELECT id FROM incidents WHERE status='open' AND type=:ty AND target=:tg AND description=:d"
+        " AND ((seq_id IS NULL AND :seq IS NULL) OR seq_id=:seq) ORDER BY id LIMIT 1"),
+        {"ty": type, "tg": target, "d": description, "seq": seq_id}).scalar()
+
+
 def get_incident(conn: Connection, incident_id: int) -> dict:
     d = _row(conn.execute(text("SELECT * FROM incidents WHERE id=:i"), {"i": incident_id}).first())
     d["alert_sent"] = bool(d["alert_sent"])

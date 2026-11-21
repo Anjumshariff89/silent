@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getToken, setToken } from "@/lib/api";
+import { hasSession, signOut } from "@/lib/api";
 import { useApi, useLive } from "@/lib/hooks";
 import type { Health, IntegrityStatus } from "@/lib/types";
 import { blockchainBadgeLabel } from "@/lib/quai";
@@ -34,9 +34,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const integrity = useApi<IntegrityStatus>(ready ? "/api/integrity/status" : null,
     { intervalMs: 10000, refreshKey: live.last?.type === "integrity" || live.last?.type === "incident" ? live.counter : 0 });
 
-  useEffect(() => {
-    if (!getToken()) router.replace("/login");
-    else setReady(true);
+  useEffect(() => {  // protected routes: no session -> /login
+    let active = true;
+    hasSession().then((ok) => {
+      if (!active) return;
+      if (ok) setReady(true);
+      else router.replace("/login");
+    });
+    return () => { active = false; };
   }, [router]);
 
   useEffect(() => setMenu(false), [pathname]);
@@ -58,7 +63,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               {n.label}
             </Link>
           ))}
-          <button onClick={() => { setToken(null); router.replace("/login"); }}
+          <button data-testid="sign-out" onClick={async () => { await signOut(); router.replace("/login"); }}
             className="mt-4 rounded px-3 py-2 text-left text-sm text-soc-muted hover:bg-white/5">Sign out</button>
         </nav>
       </aside>

@@ -7,7 +7,7 @@ import jwt
 from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy import text
 
-from backend.api.auth import ApiKey, Jwt, ctx, decode_token
+from backend.api.auth import ApiKey, Jwt, ctx, verify_bearer
 from backend.api.schemas import HeartbeatIn, IngestIn
 from backend.app.config import Settings
 from backend.database import repo
@@ -86,7 +86,7 @@ def health(request: Request) -> dict:
 async def ws_live(websocket: WebSocket, token: str = ""):
     c = websocket.app.state.ctx
     try:
-        decode_token(c.settings.jwt_secret, token)
+        verify_bearer(c.settings, token)
     except jwt.PyJWTError:
         await websocket.close(code=1008)
         return

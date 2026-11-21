@@ -11,7 +11,8 @@ from backend.blockchain.anchor import AnchorError
 
 def _clear(monkeypatch):
     for k in ("MODE", "API_KEY", "JWT_SECRET", "DATABASE_URL", "RPC_URL", "CYPRUS1_PK",
-              "CONTRACT_ADDRESS", "CHAIN_ID", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+              "CONTRACT_ADDRESS", "CHAIN_ID", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+              "SUPABASE_URL", "SUPABASE_JWT_SECRET", "FRONTEND_ORIGIN"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -21,7 +22,7 @@ def test_config_simulator_defaults(monkeypatch, tmp_path):
     assert s.mode == "simulator" and s.api_key == cfg.DEV_API_KEY and s.using_dev_api_key
     assert len(s.jwt_secret) >= 32 and s.chain_id == 15000
     assert s.integration_modes() == {"blockchain": "NOT CONFIGURED", "database": "SQLITE", "telegram": "CONSOLE",
-                                     "windows_event_log": "UNAVAILABLE"}
+                                     "windows_event_log": "UNAVAILABLE", "auth": "LOCAL"}
     assert s.database_url.startswith("sqlite:///") and s.database_url.endswith("/local.db")
 
 

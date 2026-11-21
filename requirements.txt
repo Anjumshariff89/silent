@@ -8,6 +8,7 @@ websockets==13.1
 # --- Config / auth ---
 python-dotenv==1.0.1
 PyJWT==2.10.1
+cryptography==44.0.0  # ES256/RS256 Supabase access tokens (JWKS)
 # --- Database (SQLite built-in; Postgres/Supabase via psycopg2) ---
 SQLAlchemy==2.0.36
 psycopg2-binary==2.9.10

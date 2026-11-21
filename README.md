@@ -47,7 +47,7 @@ logs through the API, verifies the chain and builds a Merkle batch:
 ## Configuration (`.env`)
 
 Edit `.env` yourself. It is git-ignored: never commit it, never paste keys into chats or tickets.
-`.env.example` contains exactly these 10 settings:
+`.env.example` contains exactly these 13 settings:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -60,6 +60,9 @@ Edit `.env` yourself. It is git-ignored: never commit it, never paste keys into 
 | `CHAIN_ID` | `15000` | Quai Orchard; the quai-service refuses to sign if the RPC reports another chain |
 | `CONTRACT_ADDRESS` | empty | Deployed `LogAnchor` contract on Cyprus-1 |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | empty | Incident alerts |
+| `SUPABASE_URL` | empty | Supabase project URL: turns on Supabase sign-in (also used for the JWKS public keys) |
+| `SUPABASE_JWT_SECRET` | empty | Legacy HS256 JWT secret of the project (empty for projects with asymmetric signing keys) |
+| `FRONTEND_ORIGIN` | empty | Extra allowed CORS origin(s), comma-separated; `http://127.0.0.1:3000` and `localhost:3000` are always allowed |
 
 Generate the two local secrets (PowerShell):
 
@@ -103,12 +106,41 @@ Notes (details in [`documentation/QUAI_COMPATIBILITY.md`](documentation/QUAI_COM
   events are still visible there.
 - Python never signs Quai transactions and never reads `CYPRUS1_PK`; only the Node quai-service does.
 
-### 2. Supabase Postgres (database)
+### 2. Supabase (database + dashboard sign-in)
 
-1. Create a Supabase project → **SQL Editor** → run `backend/database/schema_postgres.sql`, then
-   `backend/database/roles_postgres.sql` (set the role password inside the editor).
-2. **Project Settings → Database → Connection string (URI)** → `DATABASE_URL=postgresql://…`
-3. Restart. The **database** badge turns **SUPABASE** (otherwise **SQLITE**). Details: [`documentation/DATABASE.md`](documentation/DATABASE.md).
+Supabase is optional: without it the app uses SQLite and the local `admin` + `API_KEY` login. With it, logs are stored
+in Supabase Postgres and every dashboard user signs in with their own email + password (Supabase Auth). The backend
+verifies each user's access token on every request; it never needs the Supabase **service_role** key (do not copy it
+anywhere).
+
+1. **Create the project:** https://supabase.com → *New project* → choose a name, a strong database password (keep it
+   in a password manager) and a region near you.
+2. **Create the tables + Row Level Security:** *SQL Editor* → *New query* → paste the whole file
+   `supabase/migrations/20261121000000_silent_schema.sql` → *Run*. It is safe to run twice. RLS lets signed-in users
+   **read** the shared tamper-evident log; anonymous visitors get nothing and nobody can write through the Supabase API
+   (only the backend writes, through `DATABASE_URL`).
+3. **Auth settings:** *Authentication → Sign In / Providers* → Email enabled. If *Confirm email* is on, new users must
+   click the link in their inbox before signing in. *Authentication → URL Configuration* → *Site URL*
+   `http://127.0.0.1:3000`. (Supabase's built-in mailer sends only a few emails per hour; add SMTP for more.)
+4. **Copy the values yourself** (never paste them into chats or tickets):
+
+   | Where in Supabase | File | Variable |
+   |---|---|---|
+   | *Project Settings → API* (or *Data API*): Project URL | `.env` **and** `frontend\.env.local` | `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` |
+   | *Project Settings → API Keys*: `anon` / publishable key | `frontend\.env.local` only | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+   | *Project Settings → JWT Keys*: **Legacy JWT secret** (only if the project still signs with it) | `.env` | `SUPABASE_JWT_SECRET` |
+   | *Connect* → *Session pooler* URI (works over IPv4), with your DB password | `.env` | `DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require` |
+
+   Projects that use the newer asymmetric *JWT signing keys* need no secret: leave `SUPABASE_JWT_SECRET` empty and the
+   backend checks tokens against `SUPABASE_URL/auth/v1/.well-known/jwks.json`.
+5. **Create `frontend\.env.local`:** `Copy-Item frontend\.env.local.example frontend\.env.local`, then fill the two
+   `NEXT_PUBLIC_SUPABASE_*` lines. Only public values belong there (they are shipped to the browser).
+6. **Run:** `.\run-dev.ps1 -Restart`. It checks both files, refuses to start if Supabase is configured on only one
+   side, rebuilds the dashboard when `.env.local` changed, and shows badges **database SUPABASE** and **auth SUPABASE**.
+   Open http://127.0.0.1:3000 → *No account yet? Create one*.
+
+Logs still arrive from the Windows agent / `scripts\seed_logs.py` with the `X-API-Key`; signed-in users can also
+`POST /logs`. More: [`documentation/DATABASE.md`](documentation/DATABASE.md).
 
 ### 3. Telegram (incident alerts)
 
@@ -163,6 +195,12 @@ Get-Content data\runtime_logs\quai-service.err.log -Tail 40
 Common causes: `.env` has `MODE=real` but an empty `API_KEY`/`JWT_SECRET` (the backend refuses to start; fill them
 or delete `.env` and rerun to regenerate), the backend was started on another port than the dashboard was built for
 (rerun `.\run-dev.ps1 -Restart`), or a firewall blocks `127.0.0.1`. Use `127.0.0.1`, not `localhost`, in URLs.
+
+**Sign-in or every dashboard request fails with 401 / "Invalid or expired token" (Supabase)**
+- `SUPABASE_URL` in `.env` must be exactly the project URL (no trailing path) and match `NEXT_PUBLIC_SUPABASE_URL`.
+- HS256 projects: `SUPABASE_JWT_SECRET` must be the project's *Legacy JWT secret* (not the anon or service key).
+- After editing `frontend\.env.local` run `.\run-dev.ps1 -Restart` (the dashboard is rebuilt automatically).
+- `403 Local login is disabled`: Supabase sign-in is on, so use your email account, not `admin`.
 
 **`/bin/sh: -c: line 1: unexpected EOF while looking for matching '"'`**
 The script was launched from Git Bash as `pwsh -Command "..."` with nested quotes. Run it from PowerShell, or use

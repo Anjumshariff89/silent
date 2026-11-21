@@ -53,14 +53,14 @@ def create_app(settings: Settings | None = None, run_monitor: bool = True) -> Fa
                   description="Tamper-evident security logging. Anchoring proves a commitment is unchanged since "
                               "anchoring; it does not prove that an event happened.")
     app.state.ctx = ctx
-    app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                        allow_credentials=False, allow_methods=["GET", "POST"],
                        allow_headers=["Authorization", "Content-Type", "X-API-Key"])
 
     from backend.api import auth, core_routes
     app.include_router(auth.router)
     app.include_router(core_routes.router)
-    for mod in ("integrity_routes", "merkle_routes", "blockchain_routes", "evidence_routes"):
+    for mod in ("integrity_routes", "merkle_routes", "blockchain_routes", "evidence_routes", "app_routes"):
         try:  # routers added by later steps
             m = __import__(f"backend.api.{mod}", fromlist=["router"])
             app.include_router(m.router)

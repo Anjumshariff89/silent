@@ -16,6 +16,9 @@ EXPECTED_ENV_LINES = [
     "CONTRACT_ADDRESS=",
     "TELEGRAM_BOT_TOKEN=",
     "TELEGRAM_CHAT_ID=",
+    "SUPABASE_URL=",
+    "SUPABASE_JWT_SECRET=",
+    "FRONTEND_ORIGIN=",
 ]
 
 CONTRACT_ENDPOINTS = [
@@ -37,6 +40,13 @@ CONTRACT_ENDPOINTS = [
     "GET /api/evidence/{batch_id}/json",
     "GET /api/evidence/{batch_id}/pdf",
     "WebSocket /ws/live",
+    "GET /health",
+    "POST /logs",
+    "GET /logs`",
+    "GET /verify",
+    "POST /merkle/build",
+    "POST /anchor",
+    "GET /anchors",
 ]
 
 

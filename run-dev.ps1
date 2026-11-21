@@ -42,6 +42,50 @@ function Show-Troubleshooting([string]$Problem) {
     Write-Host "  * Corrupt install: .\run-dev.ps1 -Rebuild"
 }
 
+function Read-EnvFile([string]$Path) {
+    # KEY=VALUE lines -> hashtable. Values are only tested for empty/non-empty, never printed.
+    $vars = @{}
+    if (Test-Path $Path) {
+        foreach ($line in Get-Content $Path) {
+            if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') { $vars[$Matches[1]] = $Matches[2].Trim() }
+        }
+    }
+    return $vars
+}
+
+function State([hashtable]$Vars, [string]$Name) { if ($Vars[$Name]) { "SET" } else { "empty" } }
+
+# ---------------------------------------------------------------- .env checks (before starting anything)
+if (-not $Stop) {
+    $backendEnv = Join-Path $PSScriptRoot ".env"
+    $frontendEnv = Join-Path $PSScriptRoot "frontend/.env.local"
+    Write-Host "Checking configuration files ..." -ForegroundColor Cyan
+    if (Test-Path $backendEnv) { Write-Host "  .env                found" }
+    else { Write-Host "  .env                missing -> start.ps1 creates it from .env.example (new API_KEY/JWT_SECRET)" -ForegroundColor Yellow }
+    if (Test-Path $frontendEnv) { Write-Host "  frontend\.env.local found" }
+    else { Write-Host "  frontend\.env.local missing -> Supabase sign-in is off (copy frontend\.env.local.example to enable it)" -ForegroundColor Yellow }
+
+    $be = Read-EnvFile $backendEnv
+    $fe = Read-EnvFile $frontendEnv
+    $backendSupabase = [bool]($be["SUPABASE_URL"] -or $be["SUPABASE_JWT_SECRET"])
+    $frontendSupabase = [bool]($fe["NEXT_PUBLIC_SUPABASE_URL"] -and $fe["NEXT_PUBLIC_SUPABASE_ANON_KEY"])
+    Write-Host ("  Supabase (backend):  SUPABASE_URL={0} SUPABASE_JWT_SECRET={1}" -f (State $be "SUPABASE_URL"), (State $be "SUPABASE_JWT_SECRET"))
+    Write-Host ("  Supabase (frontend): NEXT_PUBLIC_SUPABASE_URL={0} NEXT_PUBLIC_SUPABASE_ANON_KEY={1}" -f (State $fe "NEXT_PUBLIC_SUPABASE_URL"), (State $fe "NEXT_PUBLIC_SUPABASE_ANON_KEY"))
+    if ($backendSupabase -ne $frontendSupabase) {
+        Write-Host "Supabase Auth is configured on only one side, so every dashboard request would fail (401/403)." -ForegroundColor Red
+        Write-Host "  Set SUPABASE_URL (+ SUPABASE_JWT_SECRET for HS256 projects) in .env AND NEXT_PUBLIC_SUPABASE_URL +" -ForegroundColor Red
+        Write-Host "  NEXT_PUBLIC_SUPABASE_ANON_KEY in frontend\.env.local - or leave all of them empty for the local admin login." -ForegroundColor Red
+        exit 1
+    }
+    if ($backendSupabase -and ($be["DATABASE_URL"] -notmatch '^postgres')) {
+        Write-Host "  Note: DATABASE_URL is not Supabase Postgres, so logs are stored in local SQLite." -ForegroundColor Yellow
+    }
+    if ($fe["SUPABASE_SERVICE_KEY"] -or $fe["NEXT_PUBLIC_SUPABASE_SERVICE_KEY"] -or $fe["CYPRUS1_PK"] -or $fe["NEXT_PUBLIC_CYPRUS1_PK"]) {
+        Write-Host "frontend\.env.local contains a secret (service key / private key). Remove it: it would be shipped to browsers." -ForegroundColor Red
+        exit 1
+    }
+}
+
 $startArgs = @{ ApiPort = $ApiPort; WebPort = $WebPort; QuaiPort = $QuaiPort }
 if ($Stop) { $startArgs.Stop = $true }
 if ($Restart) { $startArgs.Restart = $true }
@@ -89,6 +133,6 @@ if ($Seed) {
 
 Write-Host ""
 Write-Host "Open:" -ForegroundColor Green
-Write-Host "  Dashboard   http://127.0.0.1:$WebPort"
+Write-Host "  Dashboard   http://127.0.0.1:$WebPort   (sign in: $(if ($frontendSupabase) { 'Supabase email + password' } else { 'admin + API_KEY from .env' }))"
 Write-Host "  API docs    http://127.0.0.1:$ApiPort/docs"
 Write-Host "  Health      http://127.0.0.1:$ApiPort/health"
